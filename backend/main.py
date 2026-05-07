@@ -466,7 +466,7 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
                     "product_data": product_data,
                     "unit_amount": unit_amount,
                 },
-                "quantity": item.quantity,
+                "quantity": 1,
             }
         )
 
