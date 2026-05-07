@@ -1,0 +1,29 @@
+{
+  "findings": [
+    {
+      "id": "stripe-checkout-ignores-line-quantity",
+      "area": "cart-checkout",
+      "severity": "critical",
+      "confidence": "high",
+      "description": "Stripe Checkout charges one unit per cart line regardless of quantity, so the hosted total can undercharge versus the in-app cart total.",
+      "reproSteps": [
+        "Add Organic Bananas ($3.49), tap + once so quantity is 2.",
+        "Add Avocados ($5.99) and 2% Milk ($4.29) once each.",
+        "Confirm cart shows Total: $17.26 (2×$3.49 + $5.99 + $4.29).",
+        "Click Checkout and compare the Stripe-hosted order total to $17.26."
+      ],
+      "observedBehavior": "In-app total was $17.26; Stripe Checkout showed $13.77 (consistent with one unit per SKU: $3.49 + $5.99 + $4.29). Backend builds each line item with quantity forced to 1.",
+      "expectedBehavior": "Stripe line items and total must match sum(price × quantity) for every cart row (here $17.26).",
+      "consoleErrors": [
+        "GET https://stripe-camo.global.ssl.fastly.net/... net::ERR_CONNECTION_CLOSED (seen during hosted checkout in-browser)",
+        "[Stripe.js] The following payment method types are not activated in your dashboard: link, klarna, cashapp_pay"
+      ],
+      "domHints": [
+        "aside.cart",
+        ".cartTotal",
+        ".qtyControls button",
+        "button.checkoutBtn"
+      ]
+    }
+  ]
+}
