@@ -1,6 +1,12 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { Finding, Triage } from "./findings.js";
 import { TriageSchema } from "./findings.js";
+import {
+  startStreamHeartbeat,
+  waitForRunWithTimeout,
+} from "./agent-runtime.js";
+
+const TRIAGE_AGENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface TriageInput {
   apiKey: string;
@@ -15,6 +21,7 @@ export interface TriageOutput {
   agentId?: string;
   runId?: string;
   error?: string;
+  timedOut?: boolean;
 }
 
 /**
@@ -55,24 +62,44 @@ export async function runTriageAgent(
       `[triage:${finding.id}] cloud agent ${agent.agentId} run ${run.id} started`,
     );
 
+    const heartbeat = startStreamHeartbeat({ label: `triage:${finding.id}` });
     let lastText = "";
-    for await (const event of run.stream()) {
-      if (event.type === "assistant") {
-        for (const block of event.message.content) {
-          if (block.type === "text" && block.text.trim()) {
-            lastText = block.text;
+    try {
+      for await (const event of run.stream()) {
+        heartbeat.tick();
+        if (event.type === "assistant") {
+          for (const block of event.message.content) {
+            if (block.type === "text" && block.text.trim()) {
+              lastText = block.text;
+            }
           }
         }
       }
+    } finally {
+      heartbeat.stop();
     }
 
-    const result = await run.wait();
-    if (result.status !== "finished") {
+    const { result, timedOut, timeoutMs } = await waitForRunWithTimeout(
+      run,
+      TRIAGE_AGENT_TIMEOUT_MS,
+    );
+
+    if (timedOut) {
       return {
         finding,
         agentId: agent.agentId,
         runId: run.id,
-        error: `Triage run ended with status=${result.status}`,
+        error: `Triage agent exceeded ${Math.round((timeoutMs ?? 0) / 1000)}s timeout`,
+        timedOut: true,
+      };
+    }
+
+    if (!result || result.status !== "finished") {
+      return {
+        finding,
+        agentId: agent.agentId,
+        runId: run.id,
+        error: `Triage run ended with status=${result?.status ?? "unknown"}`,
       };
     }
 

@@ -226,7 +226,11 @@ async function main(): Promise<void> {
 
   // 6. Surface browser-agent failures in PR comment notes.
   for (const r of browserResults) {
-    if (r.status === "startup-failed" || r.status === "run-failed") {
+    if (
+      r.status === "startup-failed" ||
+      r.status === "run-failed" ||
+      r.status === "timed-out"
+    ) {
       notes.push(
         `Flow \`${r.configId}\` failed (${r.status})${r.error ? `: ${r.error}` : ""}.`,
       );
