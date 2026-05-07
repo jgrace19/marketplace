@@ -7,7 +7,7 @@ import {
   changedFilesAgainstMain,
   diffSummaryAgainstMain,
 } from "./lib/git.js";
-import { runRouter, type RouterDecision } from "./lib/router.js";
+import { runRouter } from "./lib/router.js";
 import { runBrowserAgent, type BrowserAgentResult } from "./lib/browser.js";
 import { runTriageAgent, type TriageOutput } from "./lib/triage.js";
 import {
@@ -96,16 +96,20 @@ async function main(): Promise<void> {
   console.log(`Changed files (${changedFiles.length}):`);
   for (const f of changedFiles) console.log(`  ${f}`);
 
-  const decisions = await runRouter({
+  const router = await runRouter({
     apiKey: env.cursorApiKey,
     changedFiles,
     diffSummary,
     configs,
   });
+  const decisions = router.decisions;
   writeFileSync(
     join(OUTPUT_DIR, "router-decisions.json"),
     JSON.stringify(decisions, null, 2),
   );
+  // Persist the raw model output too — when the router fails to produce
+  // parseable JSON the only way to debug is to see what it actually said.
+  writeFileSync(join(OUTPUT_DIR, "router-raw.txt"), router.rawOutput);
   for (const d of decisions) {
     console.log(`Router: ${d.id} dispatch=${d.dispatch} (${d.reason})`);
   }
