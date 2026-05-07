@@ -1,0 +1,23 @@
+{
+  "findings": [
+    {
+      "id": "stripe-checkout-ignores-item-quantity",
+      "area": "cart-checkout",
+      "severity": "critical",
+      "confidence": "high",
+      "description": "Creating a Stripe Checkout Session always sends each line item with quantity 1, so multi-quantity cart lines are undercharged compared to the in-app cart total.",
+      "reproSteps": [
+        "POST http://127.0.0.1:8000/api/checkout/session with body items containing one line: Organic Bananas (6 ct) at price 3.49 and quantity 2 (same payload the frontend sends for two bananas).",
+        "Use the Stripe API (or dashboard) to retrieve that Checkout Session and inspect amount_total and line item quantities."
+      ],
+      "observedBehavior": "Session cs_test_a12t6fRjf38SQ9bPa8Z5qsHcUkU1f8VUI45xFPjyiJ5jPRFhhcaIiQZc4W had amount_total 349 (USD cents), one line item for Organic Bananas with quantity 1 and amount_subtotal 349, while the request specified quantity 2 ($6.98 expected).",
+      "expectedBehavior": "Stripe amount_total and per-line quantities should match the cart: $6.98 (698 cents) for two units at $3.49, consistent with sum(price * quantity) shown in the app.",
+      "consoleErrors": [],
+      "domHints": [
+        ".cartTotal",
+        ".checkoutBtn",
+        ".qtyControls"
+      ]
+    }
+  ]
+}
