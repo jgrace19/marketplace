@@ -1,0 +1,28 @@
+id: profile-update
+description: |
+  User profile editing flow. Should run if the diff touches the profile form,
+  the floating profile button, the profile localStorage persistence, or any
+  shared input/validation utilities used by the profile page.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/index.html"
+  - "frontend/package.json"
+focus_prompt: |
+  Probe the profile editor for bugs. Cover:
+  - Open the profile page via the floating bottom-left button. Verify the
+    button shows a cartoon avatar before any profile is saved, and the user's
+    initials after saving a `Full name`.
+  - Edit every field (full name, email, phone, address line 1/2, city, state,
+    postal code, country, delivery instructions) and click `Save profile`.
+  - After saving, fully reload the page. ALL field values that were saved must
+    re-populate exactly. Missing or blank fields after reload are a bug.
+  - Validation: enter clearly invalid values (e.g., email "abc", phone "hello",
+    postal code "$$$$", state "California" instead of a 2-letter code, full
+    name with only whitespace). Note whether the form silently accepts them.
+  - Edge cases: a single-word `Full name` (e.g. "Cher") must not crash the
+    initials renderer; a very long name should still produce sensible initials;
+    saving with all fields blank should not crash.
+  - Confirm the success notice text matches what actually happened (do not
+    show "Profile saved." if persistence silently failed).
+max_turns: 60
