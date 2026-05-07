@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { loadConfigs, type QaAgentConfig } from "./lib/configs.js";
 import {
@@ -23,8 +24,11 @@ import {
   type FindingSummaryRow,
 } from "./lib/pr-comment.js";
 
-const CONFIG_DIR = ".github/qa-agents";
-const OUTPUT_DIR = "output";
+// Resolve paths against the repo root so the orchestrator works regardless of
+// the cwd it is launched from (the CI workflow runs it from `scripts/`).
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const CONFIG_DIR = join(REPO_ROOT, ".github", "qa-agents");
+const OUTPUT_DIR = join(REPO_ROOT, "scripts", "output");
 
 interface Env {
   cursorApiKey: string;
