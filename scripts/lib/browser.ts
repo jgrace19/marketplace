@@ -1,8 +1,12 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { QaAgentConfig } from "./configs.js";
 import { FindingsBundleSchema, type Finding } from "./findings.js";
+import {
+  startStreamHeartbeat,
+  waitForRunWithTimeout,
+} from "./agent-runtime.js";
 
-const FINDINGS_FILENAME = "findings.json";
+const BROWSER_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface BrowserAgentInput {
   apiKey: string;
@@ -13,7 +17,7 @@ export interface BrowserAgentInput {
 
 export interface BrowserAgentResult {
   configId: string;
-  status: "ok" | "startup-failed" | "run-failed" | "no-findings";
+  status: "ok" | "startup-failed" | "run-failed" | "timed-out" | "no-findings";
   agentId?: string;
   runId?: string;
   prUrl?: string;
@@ -25,8 +29,11 @@ export interface BrowserAgentResult {
 /**
  * Spawn one browser-exploration cloud agent for a single QA flow. The cloud
  * agent clones the repo into its own VM, brings up the backend + frontend,
- * drives a browser via the cursor-ide-browser MCP, and writes a findings.json
- * artifact when done. We poll artifacts after the run completes.
+ * drives the browser MCP, and prints findings.json contents in a fenced
+ * code block at the end of its run. We parse the JSON out of the streamed
+ * assistant text. We previously read findings via `agent.listArtifacts()`,
+ * but that only surfaces files committed to the agent's branch, so an agent
+ * that just wrote a file to disk produced zero artifacts.
  */
 export async function runBrowserAgent(
   input: BrowserAgentInput,
@@ -39,7 +46,6 @@ export async function runBrowserAgent(
       apiKey,
       cloud: {
         repos: [{ url: repoUrl, startingRef }],
-        // Browser explorations should not open PRs against the repo under test.
         autoCreatePR: false,
       },
     });
@@ -56,38 +62,60 @@ export async function runBrowserAgent(
     const prompt = buildBrowserPrompt(config);
     const run = await agent.send(prompt);
 
-    // Surface IDs immediately so we can investigate from the dashboard if the
-    // stream hangs.
     console.log(
       `[${config.id}] cloud agent ${agent.agentId} run ${run.id} started`,
     );
 
-    for await (const event of run.stream()) {
-      if (event.type === "assistant") {
-        for (const block of event.message.content) {
-          if (block.type === "text" && block.text.trim()) {
-            process.stdout.write(`[${config.id}] ${block.text}\n`);
+    const heartbeat = startStreamHeartbeat({ label: config.id });
+    let assistantText = "";
+    try {
+      for await (const event of run.stream()) {
+        heartbeat.tick();
+        if (event.type === "assistant") {
+          for (const block of event.message.content) {
+            if (block.type === "text" && block.text.trim()) {
+              process.stdout.write(`[${config.id}] ${block.text}\n`);
+              assistantText += block.text;
+            }
           }
+        } else if (event.type === "status") {
+          console.log(`[${config.id}] status=${event.status}`);
         }
-      } else if (event.type === "status") {
-        console.log(`[${config.id}] status=${event.status}`);
       }
+    } finally {
+      heartbeat.stop();
     }
 
-    const result = await run.wait();
-    if (result.status !== "finished") {
+    const { result, timedOut, timeoutMs } = await waitForRunWithTimeout(
+      run,
+      BROWSER_AGENT_TIMEOUT_MS,
+    );
+
+    if (timedOut) {
+      return {
+        configId: config.id,
+        status: "timed-out",
+        agentId: agent.agentId,
+        runId: run.id,
+        findings: [],
+        error: `Browser agent exceeded ${Math.round((timeoutMs ?? 0) / 1000)}s timeout`,
+      };
+    }
+
+    if (!result || result.status !== "finished") {
       return {
         configId: config.id,
         status: "run-failed",
         agentId: agent.agentId,
         runId: run.id,
         findings: [],
-        error: `Run terminated with status=${result.status}`,
-        rawSummary: result.result,
+        error: `Run terminated with status=${result?.status ?? "unknown"}`,
+        rawSummary: result?.result,
       };
     }
 
-    const findings = await loadFindingsFromArtifacts(agent);
+    const fullText = `${assistantText}\n${result.result ?? ""}`;
+    const findings = parseFindings(fullText);
     return {
       configId: config.id,
       status: findings.length ? "ok" : "no-findings",
@@ -109,38 +137,63 @@ export async function runBrowserAgent(
   }
 }
 
-async function loadFindingsFromArtifacts(
-  agent: Awaited<ReturnType<typeof Agent.create>>,
-): Promise<Finding[]> {
-  let artifacts;
-  try {
-    artifacts = await agent.listArtifacts();
-  } catch (err) {
-    console.warn(
-      `Could not list artifacts for ${agent.agentId}: ${(err as Error).message}`,
-    );
-    return [];
+const FENCE_RE = /```(?:json)?\s*\n([\s\S]*?)```/gi;
+
+/**
+ * Extract a `{ findings: [...] }` JSON object from the agent's streamed text.
+ * The agent prompt asks for a fenced ```json``` block at the end. We try every
+ * fenced block (last match first) and fall back to a brace-balanced scan over
+ * the raw text in case the agent forgot the fences.
+ */
+function parseFindings(text: string): Finding[] {
+  if (!text.trim()) return [];
+
+  const fenced: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = FENCE_RE.exec(text)) !== null) {
+    fenced.push(match[1]);
   }
 
-  const match = artifacts.find((a) => a.path.endsWith(FINDINGS_FILENAME));
-  if (!match) return [];
+  for (let i = fenced.length - 1; i >= 0; i -= 1) {
+    const parsed = tryParseFindingsBundle(fenced[i]);
+    if (parsed) return parsed;
+  }
 
+  for (const candidate of extractBraceBalancedObjects(text)) {
+    const parsed = tryParseFindingsBundle(candidate);
+    if (parsed) return parsed;
+  }
+
+  return [];
+}
+
+function tryParseFindingsBundle(raw: string): Finding[] | null {
+  let json: unknown;
   try {
-    const buffer = await agent.downloadArtifact(match.path);
-    const json = JSON.parse(buffer.toString("utf8"));
-    const parsed = FindingsBundleSchema.safeParse(json);
-    if (!parsed.success) {
-      console.warn(
-        `findings.json for ${agent.agentId} failed schema check: ${parsed.error.message}`,
-      );
-      return [];
+    json = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = FindingsBundleSchema.safeParse(json);
+  if (!parsed.success) return null;
+  return parsed.data.findings;
+}
+
+function* extractBraceBalancedObjects(text: string): Generator<string> {
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        yield text.slice(start, i + 1);
+        start = -1;
+      }
     }
-    return parsed.data.findings;
-  } catch (err) {
-    console.warn(
-      `Failed to read findings artifact for ${agent.agentId}: ${(err as Error).message}`,
-    );
-    return [];
   }
 }
 
@@ -183,11 +236,11 @@ function buildBrowserPrompt(config: QaAgentConfig): string {
     "",
     config.focus_prompt.trim(),
     "",
-    "## Reporting",
+    "## Reporting (REQUIRED final message)",
     "",
-    "When you are done probing, write ONE file at `findings.json` (in your",
-    "working directory, NOT under any subfolder). It MUST be a JSON object of",
-    "this exact shape:",
+    "When you are done probing, your FINAL assistant message MUST end with a",
+    "single fenced code block tagged `json` containing a JSON object of this",
+    "exact shape (no other text inside the fence):",
     "",
     "```json",
     "{",
@@ -208,8 +261,9 @@ function buildBrowserPrompt(config: QaAgentConfig): string {
     "}",
     "```",
     "",
-    "If you find no bugs, write `{ \"findings\": [] }`.",
-    "Do NOT write any other artifacts. Do NOT open a pull request.",
-    "Do NOT modify the repo. Only the `findings.json` artifact will be read.",
+    "If you find no bugs, the fenced block must contain `{\"findings\": []}`.",
+    "Do NOT modify the repo and do NOT open a pull request. The fenced JSON",
+    "block in your final assistant message is the ONLY way the orchestrator",
+    "reads your results.",
   ].join("\n");
 }
