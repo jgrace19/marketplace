@@ -1,0 +1,67 @@
+{
+  "findings": [
+    {
+      "id": "stripe-checkout-ignores-cart-quantity",
+      "area": "cart-checkout",
+      "severity": "critical",
+      "confidence": "high",
+      "description": "Creating a Stripe Checkout session always sets each line item quantity to 1, so customers are charged for one unit per SKU even when the cart has higher quantities.",
+      "reproSteps": [
+        "Open http://127.0.0.1:5173/, add Organic Bananas (6 ct) and increase quantity to 2, add Avocados qty 1, add 2% Milk qty 2 using the + control.",
+        "Confirm the in-app total matches 2×$3.49 + $5.99 + 2×$4.29 ($21.55).",
+        "Click Checkout and read Stripe’s order summary total and per-line quantities before paying."
+      ],
+      "observedBehavior": "Cart showed $21.55 but Stripe Checkout showed $13.77 with only one banana and one milk on the receipt-style list (sum of single-unit prices only).",
+      "expectedBehavior": "Stripe amount and line quantities must match the cart (e.g. two bananas must contribute $6.98 toward the session total, and the grand total must equal the in-app cart total exactly).",
+      "consoleErrors": [
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED"
+      ],
+      "domHints": [
+        "button.checkoutBtn",
+        "Circular +/- quantity controls beside each cart line",
+        "Text \"Total: $\" in cart panel",
+        "Stripe-hosted Pay button"
+      ]
+    },
+    {
+      "id": "post-payment-success-not-on-same-origin",
+      "area": "cart-checkout",
+      "severity": "major",
+      "confidence": "medium",
+      "description": "After paying in Stripe, the shopper tab at 127.0.0.1 showed no checkout query string and no payment-confirmed notice even though the cart appeared empty, consistent with success_url defaulting to localhost while the session was started on 127.0.0.1.",
+      "reproSteps": [
+        "Browse only at http://127.0.0.1:5173/ (do not open localhost:5173).",
+        "Complete a Stripe test-mode checkout after adding items.",
+        "Observe the address bar and the green success notice after returning from Stripe."
+      ],
+      "observedBehavior": "URL stayed http://127.0.0.1:5173/ without ?checkout=success&session_id=…, no “Payment confirmed” style notice, cart empty on that origin.",
+      "expectedBehavior": "The shopper should land on the same host they used, with success or warning copy driven by GET /api/checkout/session-status only after a session_id is present, so payment_status === \"paid\" is confirmed before showing success.",
+      "consoleErrors": [
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED"
+      ],
+      "domHints": [
+        "p.status.checkoutNotice",
+        "Query params checkout and session_id on return URL"
+      ]
+    },
+    {
+      "id": "product-images-connection-closed",
+      "area": "cart-checkout",
+      "severity": "minor",
+      "confidence": "high",
+      "description": "Many remote product image requests fail in the browser console with net::ERR_CONNECTION_CLOSED during normal shopping.",
+      "reproSteps": [
+        "Open DevTools Console on http://127.0.0.1:5173/.",
+        "Load the home page and scroll the product grid."
+      ],
+      "observedBehavior": "Large number of Failed to load resource: net::ERR_CONNECTION_CLOSED errors for unsplash (or similar) image URLs.",
+      "expectedBehavior": "Product thumbnails should load reliably or fall back gracefully without spamming console errors.",
+      "consoleErrors": [
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED"
+      ],
+      "domHints": [
+        "Product grid images in main catalog"
+      ]
+    }
+  ]
+}
