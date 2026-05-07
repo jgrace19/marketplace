@@ -37,6 +37,7 @@ interface Env {
   linearProjectId?: string;
   ghRepo: string;
   ghSha: string;
+  ghHeadRef: string;
   prNumber?: string;
   baseRef: string;
 }
@@ -54,6 +55,13 @@ function readEnv(): Env {
     "";
   if (!ghRepo) throw new Error("GH_REPO or GITHUB_REPOSITORY is required");
   if (!ghSha) throw new Error("GH_SHA or GITHUB_SHA is required");
+  // The Cursor cloud API expects a branch name (not a SHA) as startingRef, so
+  // we require the PR's head ref. GITHUB_HEAD_REF is set by GitHub Actions on
+  // pull_request events.
+  const ghHeadRef = process.env.GH_HEAD_REF || process.env.GITHUB_HEAD_REF;
+  if (!ghHeadRef) {
+    throw new Error("GH_HEAD_REF or GITHUB_HEAD_REF is required");
+  }
 
   return {
     cursorApiKey,
@@ -62,6 +70,7 @@ function readEnv(): Env {
     linearProjectId: process.env.LINEAR_PROJECT_ID,
     ghRepo,
     ghSha,
+    ghHeadRef,
     prNumber: process.env.PR_NUMBER,
     baseRef: process.env.BASE_REF || "origin/main",
   };
@@ -116,7 +125,7 @@ async function main(): Promise<void> {
         runBrowserAgent({
           apiKey: env.cursorApiKey,
           repoUrl: `https://github.com/${env.ghRepo}`,
-          startingRef: env.ghSha,
+          startingRef: env.ghHeadRef,
           config: cfg,
         }),
       ),
@@ -174,12 +183,12 @@ async function main(): Promise<void> {
     (e) => !e.skipped && !e.existing,
   );
   const triageOutputs: TriageOutput[] = needsTriage.length
-    ? await Promise.all(
+      ? await Promise.all(
         needsTriage.map((e) =>
           runTriageAgent({
             apiKey: env.cursorApiKey,
             repoUrl: `https://github.com/${env.ghRepo}`,
-            startingRef: env.ghSha,
+            startingRef: env.ghHeadRef,
             finding: e.finding,
           }),
         ),
@@ -217,7 +226,11 @@ async function main(): Promise<void> {
 
   // 6. Surface browser-agent failures in PR comment notes.
   for (const r of browserResults) {
-    if (r.status === "startup-failed" || r.status === "run-failed") {
+    if (
+      r.status === "startup-failed" ||
+      r.status === "run-failed" ||
+      r.status === "timed-out"
+    ) {
       notes.push(
         `Flow \`${r.configId}\` failed (${r.status})${r.error ? `: ${r.error}` : ""}.`,
       );
