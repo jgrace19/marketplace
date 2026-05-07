@@ -1,0 +1,23 @@
+{
+  "name": "marketplace-agent-orchestrator",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local orchestrator that dispatches Cursor cloud agents to probe the cart and profile flows on every PR.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx agent-orchestrator.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.12",
+    "@linear/sdk": "^84.0.0",
+    "minimatch": "^10.0.1",
+    "yaml": "^2.6.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

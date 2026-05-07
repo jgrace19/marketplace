@@ -9,3 +9,8 @@ backend/.venv/
 # Node
 frontend/node_modules/
 frontend/dist/
+scripts/node_modules/
+
+# Orchestrator artifacts (uploaded by CI)
+scripts/output/
+output/
