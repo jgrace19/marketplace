@@ -43,6 +43,7 @@ jobs:
           GH_TOKEN:          ${{ secrets.GITHUB_TOKEN }}
           GH_REPO:           ${{ github.repository }}
           GH_SHA:            ${{ github.event.pull_request.head.sha }}
+          GH_HEAD_REF:       ${{ github.event.pull_request.head.ref }}
           PR_NUMBER:         ${{ github.event.pull_request.number }}
           BASE_REF:          origin/${{ github.event.pull_request.base.ref }}
 
