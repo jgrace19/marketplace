@@ -7,10 +7,13 @@ import {
 } from "./agent-runtime.js";
 
 const BROWSER_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
+const FINDINGS_FILENAME = "findings.json";
 
 export interface BrowserAgentInput {
   apiKey: string;
   repoUrl: string;
+  repoSlug: string;
+  githubToken?: string;
   startingRef: string;
   config: QaAgentConfig;
 }
@@ -20,8 +23,10 @@ export interface BrowserAgentResult {
   status: "ok" | "startup-failed" | "run-failed" | "timed-out" | "no-findings";
   agentId?: string;
   runId?: string;
+  branch?: string;
   prUrl?: string;
   findings: Finding[];
+  findingsSource?: "fenced-json" | "branch-file";
   rawSummary?: string;
   error?: string;
 }
@@ -38,7 +43,8 @@ export interface BrowserAgentResult {
 export async function runBrowserAgent(
   input: BrowserAgentInput,
 ): Promise<BrowserAgentResult> {
-  const { apiKey, repoUrl, startingRef, config } = input;
+  const { apiKey, repoUrl, repoSlug, githubToken, startingRef, config } =
+    input;
 
   let agent;
   try {
@@ -114,14 +120,41 @@ export async function runBrowserAgent(
       };
     }
 
+    const branch = result.git?.branches?.[0]?.branch;
+    const prUrl = result.git?.branches?.[0]?.prUrl;
+
+    // Two transports, in order of preference:
+    //   1. Fenced JSON in the agent's final assistant message (if it followed
+    //      the prompt).
+    //   2. findings.json committed to the cloud agent's branch (if it took the
+    //      idiomatic Cursor cloud agent route of committing its work).
     const fullText = `${assistantText}\n${result.result ?? ""}`;
-    const findings = parseFindings(fullText);
+    let findings = parseFindings(fullText);
+    let findingsSource: BrowserAgentResult["findingsSource"];
+    if (findings.length) {
+      findingsSource = "fenced-json";
+    } else if (branch) {
+      const fromBranch = await fetchFindingsFromBranch({
+        repoSlug,
+        branch,
+        githubToken,
+        configId: config.id,
+      });
+      if (fromBranch.length) {
+        findings = fromBranch;
+        findingsSource = "branch-file";
+      }
+    }
+
     return {
       configId: config.id,
       status: findings.length ? "ok" : "no-findings",
       agentId: agent.agentId,
       runId: run.id,
+      branch,
+      prUrl,
       findings,
+      findingsSource,
       rawSummary: result.result,
     };
   } catch (err) {
@@ -197,6 +230,108 @@ function* extractBraceBalancedObjects(text: string): Generator<string> {
   }
 }
 
+interface FetchFromBranchInput {
+  repoSlug: string;
+  branch: string;
+  githubToken?: string;
+  configId: string;
+}
+
+/**
+ * Cursor cloud agents typically commit work to their own branch in the host
+ * repo. We use the GitHub Contents API (rather than `git fetch`) so we don't
+ * depend on the orchestrator's local git remote being writable or the branch
+ * being already fetched in CI.
+ */
+async function fetchFindingsFromBranch(
+  input: FetchFromBranchInput,
+): Promise<Finding[]> {
+  const { repoSlug, branch, githubToken, configId } = input;
+  if (!githubToken) {
+    console.warn(
+      `[${configId}] cloud agent worked on branch ${branch} but no GH token is set; cannot fetch findings.json from it.`,
+    );
+    return [];
+  }
+  const url = `https://api.github.com/repos/${repoSlug}/contents/${FINDINGS_FILENAME}?ref=${encodeURIComponent(branch)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[${configId}] GitHub API request for ${branch}/findings.json failed: ${(err as Error).message}`,
+    );
+    return [];
+  }
+  if (res.status === 404) {
+    console.warn(
+      `[${configId}] no findings.json found on cloud agent branch ${branch}.`,
+    );
+    return [];
+  }
+  if (!res.ok) {
+    console.warn(
+      `[${configId}] GitHub API ${res.status} fetching findings.json from ${branch}: ${await safeReadBody(res)}`,
+    );
+    return [];
+  }
+  let body: { content?: string; encoding?: string };
+  try {
+    body = (await res.json()) as { content?: string; encoding?: string };
+  } catch (err) {
+    console.warn(
+      `[${configId}] GitHub API response was not JSON: ${(err as Error).message}`,
+    );
+    return [];
+  }
+  if (!body.content || body.encoding !== "base64") {
+    console.warn(
+      `[${configId}] unexpected GitHub Contents shape (encoding=${body.encoding ?? "?"}).`,
+    );
+    return [];
+  }
+  let raw: string;
+  try {
+    raw = Buffer.from(body.content, "base64").toString("utf8");
+  } catch (err) {
+    console.warn(
+      `[${configId}] failed to decode findings.json from base64: ${(err as Error).message}`,
+    );
+    return [];
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (err) {
+    console.warn(
+      `[${configId}] findings.json on ${branch} is not valid JSON: ${(err as Error).message}`,
+    );
+    return [];
+  }
+  const parsed = FindingsBundleSchema.safeParse(json);
+  if (!parsed.success) {
+    console.warn(
+      `[${configId}] findings.json on ${branch} failed schema check: ${parsed.error.message}`,
+    );
+    return [];
+  }
+  return parsed.data.findings;
+}
+
+async function safeReadBody(res: Response): Promise<string> {
+  try {
+    return (await res.text()).slice(0, 200);
+  } catch {
+    return "(could not read body)";
+  }
+}
+
 function formatStartupError(err: unknown): string {
   if (err instanceof CursorAgentError) {
     return `${err.message} (retryable=${err.isRetryable ?? false})`;
@@ -236,11 +371,12 @@ function buildBrowserPrompt(config: QaAgentConfig): string {
     "",
     config.focus_prompt.trim(),
     "",
-    "## Reporting (REQUIRED final message)",
+    "## Reporting (REQUIRED)",
     "",
-    "When you are done probing, your FINAL assistant message MUST end with a",
-    "single fenced code block tagged `json` containing a JSON object of this",
-    "exact shape (no other text inside the fence):",
+    "Write `findings.json` at the repository root with EXACTLY this shape and",
+    "commit it to your working branch (your normal cloud-agent branch is",
+    "fine — the orchestrator reads `findings.json` directly from that branch",
+    "via the GitHub Contents API). Do NOT open a pull request.",
     "",
     "```json",
     "{",
@@ -261,9 +397,10 @@ function buildBrowserPrompt(config: QaAgentConfig): string {
     "}",
     "```",
     "",
-    "If you find no bugs, the fenced block must contain `{\"findings\": []}`.",
-    "Do NOT modify the repo and do NOT open a pull request. The fenced JSON",
-    "block in your final assistant message is the ONLY way the orchestrator",
-    "reads your results.",
+    "If you find no bugs, write `{\"findings\": []}` to the same file. As a",
+    "redundant transport you may also include the same JSON object inside a",
+    "fenced ```json``` block at the end of your final assistant message; the",
+    "orchestrator prefers that when present and falls back to the file. Do",
+    "not modify any other files.",
   ].join("\n");
 }
