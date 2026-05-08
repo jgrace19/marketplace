@@ -41,6 +41,42 @@ export async function waitForRunWithTimeout(
   }
 }
 
+/**
+ * Buffers token-level streaming text and flushes to stdout one full line at a
+ * time, prefixed with `[label]`. The cloud agent stream emits one text block
+ * per token (e.g. "Setting", " up", " the", "\n", "backend") so writing each
+ * block followed by a newline produced an unreadable one-token-per-line log.
+ * This collapses tokens back into lines while preserving the per-flow tag.
+ */
+export function createLineBufferedLogger(label: string): {
+  write: (text: string) => void;
+  flush: () => void;
+} {
+  let buffer = "";
+  const writeLine = (line: string): void => {
+    process.stdout.write(`[${label}] ${line}\n`);
+  };
+  return {
+    write(text: string): void {
+      if (!text) return;
+      buffer += text;
+      let newlineIdx = buffer.indexOf("\n");
+      while (newlineIdx !== -1) {
+        const line = buffer.slice(0, newlineIdx);
+        if (line.length > 0) writeLine(line);
+        buffer = buffer.slice(newlineIdx + 1);
+        newlineIdx = buffer.indexOf("\n");
+      }
+    },
+    flush(): void {
+      if (buffer.length > 0) {
+        writeLine(buffer);
+        buffer = "";
+      }
+    },
+  };
+}
+
 export interface HeartbeatOptions {
   label: string;
   intervalMs?: number;

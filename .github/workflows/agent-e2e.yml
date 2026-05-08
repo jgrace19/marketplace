@@ -46,6 +46,14 @@ jobs:
           GH_HEAD_REF:       ${{ github.event.pull_request.head.ref }}
           PR_NUMBER:         ${{ github.event.pull_request.number }}
           BASE_REF:          origin/${{ github.event.pull_request.base.ref }}
+          # Fail the workflow if a browser/triage agent fell over
+          # (startup-failed, run-failed, timed-out). Set to "false" to keep
+          # the run green when only infra failures occur.
+          FAIL_ON_AGENT_ERROR: "true"
+          # Optionally fail the workflow when any finding meets this severity
+          # threshold or higher. One of: critical, major, minor, cosmetic.
+          # Empty / unset / "off" disables this check (default).
+          FAIL_ON_FINDING_SEVERITY: ""
 
       - name: Upload orchestrator output
         if: always()

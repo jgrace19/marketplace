@@ -2,6 +2,7 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { QaAgentConfig } from "./configs.js";
 import { FindingsBundleSchema, type Finding } from "./findings.js";
 import {
+  createLineBufferedLogger,
   startStreamHeartbeat,
   waitForRunWithTimeout,
 } from "./agent-runtime.js";
@@ -73,14 +74,15 @@ export async function runBrowserAgent(
     );
 
     const heartbeat = startStreamHeartbeat({ label: config.id });
+    const logger = createLineBufferedLogger(config.id);
     let assistantText = "";
     try {
       for await (const event of run.stream()) {
         heartbeat.tick();
         if (event.type === "assistant") {
           for (const block of event.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              process.stdout.write(`[${config.id}] ${block.text}\n`);
+            if (block.type === "text" && block.text) {
+              logger.write(block.text);
               assistantText += block.text;
             }
           }
@@ -89,6 +91,7 @@ export async function runBrowserAgent(
         }
       }
     } finally {
+      logger.flush();
       heartbeat.stop();
     }
 
