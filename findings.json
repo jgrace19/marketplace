@@ -1,0 +1,66 @@
+{
+  "findings": [
+    {
+      "id": "stripe-line-item-quantity-hardcoded",
+      "area": "cart-checkout",
+      "severity": "critical",
+      "confidence": "high",
+      "description": "Stripe Checkout is created with each line item quantity forced to 1, so totals undercharge whenever any cart line has quantity greater than 1.",
+      "reproSteps": [
+        "Open http://127.0.0.1:5173/, add Organic Bananas and click Add twice (or use + so quantity is 2).",
+        "Optionally add another product (e.g. 2% Milk) to see a larger mismatch.",
+        "Click Checkout and compare the Stripe-hosted total to the in-app cart total.",
+        "Alternatively POST http://127.0.0.1:8000/api/checkout/session with one item price 3.49 and quantity 2, then retrieve the session: amount_total is 349 instead of 698."
+      ],
+      "observedBehavior": "In-app cart total matched sum(price × quantity) (e.g. 2×$3.49 + milk = $11.27), but Stripe Checkout showed $7.78 with only one banana line; API-created session had amount_total_cents 349 and line item quantity 1 for quantity=2 in the request.",
+      "expectedBehavior": "Stripe Checkout total must equal the in-app cart total exactly (e.g. two bananas at $3.49 must charge $6.98, with line item quantity 2 or equivalent).",
+      "consoleErrors": [],
+      "domHints": [
+        ".cart .qtyControls button (increment)",
+        ".cartTotal",
+        "button.checkoutBtn",
+        "Stripe Checkout hosted page total"
+      ]
+    },
+    {
+      "id": "empty-cart-no-checkout-button",
+      "area": "cart-checkout",
+      "severity": "minor",
+      "confidence": "high",
+      "description": "When the cart is empty, the Checkout control is omitted rather than shown in a disabled state.",
+      "reproSteps": [
+        "Open http://127.0.0.1:5173/ with an empty cart (remove all items with -).",
+        "Look in the cart aside for a Checkout button."
+      ],
+      "observedBehavior": "Cart shows “No items yet.” and there is no Checkout button in the DOM.",
+      "expectedBehavior": "Probe instructions required a Checkout button that is disabled when the cart is empty (still visible but not actionable).",
+      "consoleErrors": [],
+      "domHints": [
+        "aside.cart",
+        "aside.cart first paragraph when empty (\"No items yet.\")"
+      ]
+    },
+    {
+      "id": "asset-and-stripe-cdn-console-errors",
+      "area": "cart-checkout",
+      "severity": "minor",
+      "confidence": "medium",
+      "description": "Browser console showed repeated failed network requests (including product images and Stripe-related resources) during the cart-checkout probe.",
+      "reproSteps": [
+        "Open http://127.0.0.1:5173/ with developer tools console open.",
+        "Load the shop and proceed through add-to-cart and Checkout as usual."
+      ],
+      "observedBehavior": "Multiple errors such as net::ERR_CONNECTION_CLOSED for images.unsplash.com photo URLs and Stripe-related hosts; Stripe JS also logged that some payment method types are not activated.",
+      "expectedBehavior": "Product images and Stripe assets should load without connection-closed failures under normal network conditions; console should be free of spurious errors during a standard checkout probe.",
+      "consoleErrors": [
+        "GET … images.unsplash.com/… net::ERR_CONNECTION_CLOSED",
+        "GET … stripe-coop.global.ssl.fastly.net/… net::ERR_CONNECTION_CLOSED",
+        "[Stripe js] The following payment method types are not activated: link, klarna, amazon_pay"
+      ],
+      "domHints": [
+        ".productsGrid article.card img",
+        "Devtools Network / Console panels"
+      ]
+    }
+  ]
+}
