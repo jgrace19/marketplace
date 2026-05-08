@@ -1,18 +1,18 @@
 {
   "findings": [
     {
-      "id": "stripe-line-items-ignore-cart-quantity",
+      "id": "stripe-checkout-ignores-line-quantity",
       "area": "cart-checkout",
       "severity": "critical",
       "confidence": "high",
-      "description": "Stripe Checkout charges one unit per line item while the in-app cart total uses each item’s cart quantity, so paid amounts diverge from the displayed cart total.",
+      "description": "Checkout sessions send each cart line to Stripe with quantity 1, so the customer is charged for one unit per product regardless of cart quantity.",
       "reproSteps": [
-        "Start backend and frontend, open the shop at http://127.0.0.1:5173/.",
-        "Add two units of Organic Bananas ($3.49 each) and confirm the cart shows Total $6.98.",
-        "Click Checkout and read the total on the Stripe hosted checkout page, or POST /api/checkout/session with quantity 2 and GET /api/checkout/session-status for amount_total."
+        "Run backend and frontend; open http://127.0.0.1:5173/.",
+        "Add two units of Organic Bananas ($3.49 each) and one unit of Avocados ($5.99); confirm cart Total $12.97.",
+        "Click Checkout and read the total on the Stripe hosted page, or call POST /api/checkout/session with those items and GET /api/checkout/session-status for amount_total in cents."
       ],
-      "observedBehavior": "In-app total is $6.98 for two bananas, but Stripe shows $3.49 (and session-status reports amount_total 349 cents). With multiple lines, Stripe total equals the sum of unit prices once each (e.g. cart $18.96 for 2×bananas and 2×avocados becomes $9.48 on Stripe).",
-      "expectedBehavior": "Stripe total must equal the cart total (e.g. two bananas at $3.49 must charge $6.98 / 698 cents), with line item quantities matching the cart.",
+      "observedBehavior": "Cart shows $12.97, but Stripe displays $9.48 (one banana and one avocado). API: for two bananas only, session-status reports amount_total 349 (cents) while the cart expects 698 cents.",
+      "expectedBehavior": "Stripe charged total must equal the in-app cart total (e.g. two bananas at $3.49 charges $6.98 / 698 cents), with line quantities matching the cart.",
       "consoleErrors": [
         "Failed to load resource: net::ERR_CONNECTION_CLOSED (Unsplash product image URLs)"
       ],
@@ -23,21 +23,41 @@
       ]
     },
     {
-      "id": "empty-cart-checkout-button-not-disabled",
+      "id": "empty-cart-checkout-control-hidden",
       "area": "cart-checkout",
       "severity": "minor",
       "confidence": "high",
-      "description": "When the cart is empty there is no Checkout control with a disabled state—the button is omitted instead.",
+      "description": "When the cart is empty there is no Checkout control rendered, rather than a disabled Checkout button.",
       "reproSteps": [
         "Open http://127.0.0.1:5173/ with an empty cart.",
         "Inspect the cart aside for a Checkout action."
       ],
-      "observedBehavior": "With zero items the cart shows “No items yet.” and no Checkout button is rendered.",
-      "expectedBehavior": "Per QA criteria the Checkout control should remain present and disabled when the cart is empty.",
+      "observedBehavior": "Cart shows “No items yet.” and no Checkout button is present.",
+      "expectedBehavior": "Checkout should remain visible and be disabled when the cart is empty so the empty-state affordance is explicit.",
       "consoleErrors": [],
       "domHints": [
         "aside.cart",
         "button.checkoutBtn"
+      ]
+    },
+    {
+      "id": "product-images-connection-closed",
+      "area": "cart-checkout",
+      "severity": "cosmetic",
+      "confidence": "high",
+      "description": "Product thumbnails from remote image URLs often fail to load, flooding the console with net::ERR_CONNECTION_CLOSED errors during browsing.",
+      "reproSteps": [
+        "Open the shop at http://127.0.0.1:5173/ and load the product grid.",
+        "Open the browser developer console and observe failed image requests."
+      ],
+      "observedBehavior": "Multiple errors such as Failed to load resource: net::ERR_CONNECTION_CLOSED for image URLs (e.g. Unsplash).",
+      "expectedBehavior": "Images load reliably or fail silently without noisy console errors during routine QA.",
+      "consoleErrors": [
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED (product image URLs)"
+      ],
+      "domHints": [
+        "section.productsGrid",
+        "article.card img"
       ]
     }
   ]
