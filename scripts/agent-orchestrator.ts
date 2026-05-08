@@ -38,6 +38,7 @@ interface Env {
   ghRepo: string;
   ghSha: string;
   ghHeadRef: string;
+  ghToken?: string;
   prNumber?: string;
   baseRef: string;
 }
@@ -71,6 +72,7 @@ function readEnv(): Env {
     ghRepo,
     ghSha,
     ghHeadRef,
+    ghToken: process.env.GH_TOKEN || process.env.GITHUB_TOKEN,
     prNumber: process.env.PR_NUMBER,
     baseRef: process.env.BASE_REF || "origin/main",
   };
@@ -129,6 +131,8 @@ async function main(): Promise<void> {
         runBrowserAgent({
           apiKey: env.cursorApiKey,
           repoUrl: `https://github.com/${env.ghRepo}`,
+          repoSlug: env.ghRepo,
+          githubToken: env.ghToken,
           startingRef: env.ghHeadRef,
           config: cfg,
         }),
@@ -142,7 +146,7 @@ async function main(): Promise<void> {
       JSON.stringify(r, null, 2),
     );
     console.log(
-      `Browser flow ${r.configId}: status=${r.status} findings=${r.findings.length}${r.error ? ` error=${r.error}` : ""}`,
+      `Browser flow ${r.configId}: status=${r.status} findings=${r.findings.length}${r.findingsSource ? ` source=${r.findingsSource}` : ""}${r.branch ? ` branch=${r.branch}` : ""}${r.error ? ` error=${r.error}` : ""}`,
     );
   }
 
