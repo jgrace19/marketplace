@@ -30,6 +30,8 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_DIR = join(REPO_ROOT, ".github", "qa-agents");
 const OUTPUT_DIR = join(REPO_ROOT, "scripts", "output");
 
+type Severity = "critical" | "major" | "minor" | "cosmetic";
+
 interface Env {
   cursorApiKey: string;
   linearApiKey?: string;
@@ -41,6 +43,34 @@ interface Env {
   ghToken?: string;
   prNumber?: string;
   baseRef: string;
+  failOnAgentError: boolean;
+  failOnFindingSeverity?: Severity;
+}
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  cosmetic: 0,
+  minor: 1,
+  major: 2,
+  critical: 3,
+};
+
+function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined) return defaultValue;
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "true" || v === "1" || v === "yes") return true;
+  if (v === "false" || v === "0" || v === "no") return false;
+  return defaultValue;
+}
+
+function parseSeverity(value: string | undefined): Severity | undefined {
+  if (!value) return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "off" || v === "none") return undefined;
+  if (v in SEVERITY_RANK) return v as Severity;
+  console.warn(
+    `Unknown FAIL_ON_FINDING_SEVERITY value '${value}'; ignoring (must be one of: critical, major, minor, cosmetic).`,
+  );
+  return undefined;
 }
 
 function readEnv(): Env {
@@ -75,6 +105,8 @@ function readEnv(): Env {
     ghToken: process.env.GH_TOKEN || process.env.GITHUB_TOKEN,
     prNumber: process.env.PR_NUMBER,
     baseRef: process.env.BASE_REF || "origin/main",
+    failOnAgentError: parseBoolean(process.env.FAIL_ON_AGENT_ERROR, true),
+    failOnFindingSeverity: parseSeverity(process.env.FAIL_ON_FINDING_SEVERITY),
   };
 }
 
@@ -272,6 +304,62 @@ async function main(): Promise<void> {
   } else {
     console.log("No PR_NUMBER set; skipping PR comment.");
   }
+
+  // 8. Decide workflow exit status. We do this last so the PR comment and
+  //    artifact upload still happen even when we are about to fail the run.
+  evaluateExitStatus({
+    env,
+    browserResults,
+    findings: dedupedFindings,
+  });
+}
+
+interface ExitStatusInput {
+  env: Env;
+  browserResults: BrowserAgentResult[];
+  findings: Finding[];
+}
+
+function evaluateExitStatus(input: ExitStatusInput): void {
+  const { env, browserResults, findings } = input;
+  const failures: string[] = [];
+
+  if (env.failOnAgentError) {
+    for (const r of browserResults) {
+      if (
+        r.status === "startup-failed" ||
+        r.status === "run-failed" ||
+        r.status === "timed-out"
+      ) {
+        failures.push(
+          `Browser flow ${r.configId} ended with status=${r.status}${r.error ? ` (${r.error})` : ""}`,
+        );
+      }
+    }
+  }
+
+  if (env.failOnFindingSeverity) {
+    const threshold = SEVERITY_RANK[env.failOnFindingSeverity];
+    for (const f of findings) {
+      const rank = SEVERITY_RANK[f.severity as Severity] ?? -1;
+      if (rank >= threshold) {
+        failures.push(
+          `Finding ${f.id} severity=${f.severity} meets threshold ${env.failOnFindingSeverity}`,
+        );
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    console.log(
+      `Exit status: success (failOnAgentError=${env.failOnAgentError}, failOnFindingSeverity=${env.failOnFindingSeverity ?? "off"}).`,
+    );
+    return;
+  }
+
+  console.error("Exit status: failing the workflow because:");
+  for (const f of failures) console.error(`  - ${f}`);
+  process.exitCode = 1;
 }
 
 function createReporter(env: Env): LinearReporter | null {
