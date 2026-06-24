@@ -1,5 +1,7 @@
 # FreshCart test suites
 
+<!-- Note: CI automation validation PR (smoke tests intentionally failing). -->
+
 QA test assets, organized by layer. Each layer has a `.cursor/rules` file that
 encodes the team's conventions so AI-authored tests match house style.
 
