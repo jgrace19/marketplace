@@ -7,11 +7,14 @@ import static org.hamcrest.Matchers.notNullValue;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
-import io.restassured.RestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Rest Assured step definitions for the product catalog feature.
@@ -21,6 +24,7 @@ import java.util.List;
  * read from configuration rather than hardcoded.
  */
 public class ProductsApiSteps {
+  private static final Pattern TOKEN_PATTERN = Pattern.compile("[a-z0-9]+");
 
   private static final String BASE_URI =
       System.getProperty("api.baseUri", System.getenv().getOrDefault("API_BASE_URI", "http://127.0.0.1:8000"));
@@ -57,11 +61,48 @@ public class ProductsApiSteps {
 
   @Then("every returned product matches {string}")
   public void every_returned_product_matches(String query) {
-    List<String> names = response.then().statusCode(200).extract().jsonPath().getList("items.name");
-    for (String name : names) {
+    List<Map<String, Object>> items = response.then().statusCode(200).extract().jsonPath().getList("items");
+    for (Map<String, Object> item : items) {
+      String name = String.valueOf(item.getOrDefault("name", ""));
+      String description = String.valueOf(item.getOrDefault("description", ""));
       org.junit.jupiter.api.Assertions.assertTrue(
-          name.toLowerCase().contains(query.toLowerCase()),
+          matchesPartialTerms(name + " " + description, query),
           "Expected product '" + name + "' to match query '" + query + "'");
     }
+  }
+
+  private static boolean matchesPartialTerms(String searchableText, String query) {
+    List<String> queryTerms = tokenize(query);
+    if (queryTerms.isEmpty()) {
+      return true;
+    }
+
+    List<String> productTerms = tokenize(searchableText);
+    if (productTerms.isEmpty()) {
+      return false;
+    }
+
+    for (String term : queryTerms) {
+      boolean matched = false;
+      for (String token : productTerms) {
+        if (token.contains(term)) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static List<String> tokenize(String text) {
+    List<String> tokens = new ArrayList<>();
+    Matcher matcher = TOKEN_PATTERN.matcher(text.toLowerCase());
+    while (matcher.find()) {
+      tokens.add(matcher.group());
+    }
+    return tokens;
   }
 }
