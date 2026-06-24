@@ -12,5 +12,9 @@ test.describe("FreshCart smoke", () => {
 
     await expect(cartPage.cartItems.first()).toBeVisible();
     await expect(cartPage.checkoutButton).toBeEnabled();
+
+    // NOTE: intentional failure to verify CI surfaces smoke-test breakages.
+    // Only one product was added, so the cart should contain exactly 1 item.
+    await expect(cartPage.cartItems).toHaveCount(2);
   });
 });
