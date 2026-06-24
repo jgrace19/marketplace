@@ -1,0 +1,14 @@
+---
+description: Conventions for Gherkin feature files and Rest Assured API step definitions
+globs: tests/integration/**/*.{feature,java}
+alwaysApply: false
+---
+# Integration Test Rules (Gherkin + Rest Assured)
+- Feature files live in tests/integration/features/; step definitions in tests/integration/steps/.
+- Write Gherkin in business language: Given a precondition, When an action, Then an observable outcome. No HTTP verbs or status codes in the Given/When/Then prose.
+- One Scenario per behavior. Use Scenario Outline with an Examples table for data-driven cases, and source the rows from the test-data matrix.
+- Keep assertions in step definitions, not in feature files.
+- In Rest Assured steps, assert on status code and response body separately; assert the contract (fields, types), not just a 200.
+- Centralize base URI, auth, and JSON (de)serialization in a shared request spec; do not rebuild the client per step.
+- Tag scenarios (@discount, @smoke, @negative) so suites can be filtered in CI.
+- Never hardcode environment URLs; read them from configuration.
