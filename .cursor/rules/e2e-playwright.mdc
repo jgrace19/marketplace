@@ -1,0 +1,12 @@
+---
+description: Conventions for Playwright E2E tests
+globs: tests/e2e/**/*.spec.ts
+alwaysApply: false
+---
+# Playwright E2E Rules
+- Use the Page Object Model; page objects live in tests/e2e/pages/.
+- Select elements by data-testid only. Never by text, CSS class, or XPath.
+- No hard waits (no waitForTimeout). Use web-first assertions and auto-waiting locators.
+- Reuse shared fixtures from tests/e2e/fixtures/; do not re-implement login or cart setup.
+- One assertion theme per test; name tests by user outcome, not implementation.
+- Test data comes from the data matrix, not inline literals.

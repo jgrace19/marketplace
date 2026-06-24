@@ -58,6 +58,10 @@ export default function App() {
     type: "idle",
     message: ""
   });
+  const [discountInput, setDiscountInput] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [discountError, setDiscountError] = useState("");
+  const [discountLoading, setDiscountLoading] = useState(false);
   const [profile, setProfile] = useState(createEmptyProfile());
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
@@ -135,6 +139,47 @@ export default function App() {
     [cartItems]
   );
 
+  const orderTotal = appliedDiscount ? appliedDiscount.new_total : cartTotal;
+
+  async function applyDiscount() {
+    const code = discountInput.trim();
+    if (!code) {
+      setDiscountError("Enter a discount code.");
+      return;
+    }
+    setDiscountLoading(true);
+    setDiscountError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/discount/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotal: cartTotal })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not apply discount code.");
+      }
+      setAppliedDiscount(data);
+    } catch (err) {
+      setAppliedDiscount(null);
+      setDiscountError(err.message || "Could not apply discount code.");
+    } finally {
+      setDiscountLoading(false);
+    }
+  }
+
+  function removeDiscount() {
+    setAppliedDiscount(null);
+    setDiscountInput("");
+    setDiscountError("");
+  }
+
+  // A discounted total is only valid for the subtotal it was computed against,
+  // so drop the applied discount whenever the cart contents change.
+  useEffect(() => {
+    setAppliedDiscount(null);
+  }, [cartTotal]);
+
   function addToCart(productId) {
     setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
   }
@@ -185,7 +230,8 @@ export default function App() {
             price: item.price,
             quantity: item.quantity,
             image_url: item.image_url
-          }))
+          })),
+          discount_code: appliedDiscount ? appliedDiscount.code : ""
         })
       });
       const data = await response.json();
@@ -318,6 +364,7 @@ export default function App() {
           <section className="searchBar">
             <input
               type="text"
+              data-testid="search-input"
               value={query}
               placeholder="Search products..."
               onChange={(event) => setQuery(event.target.value)}
@@ -353,13 +400,17 @@ export default function App() {
           <main className="content">
             <section className="productsGrid">
               {products.map((product) => (
-                <article className="card" key={product.id}>
+                <article className="card" key={product.id} data-testid="product-card">
                   <img src={product.image_url} alt={product.name} />
                   <h3>{product.name}</h3>
                   <p>{product.description}</p>
                   <div className="row">
                     <strong>{currency(product.price)}</strong>
-                    <button className="addBtn" onClick={() => addToCart(product.id)}>
+                    <button
+                      className="addBtn"
+                      data-testid="add-to-cart-button"
+                      onClick={() => addToCart(product.id)}
+                    >
                       Add
                     </button>
                   </div>
@@ -368,14 +419,14 @@ export default function App() {
               ))}
             </section>
 
-            <aside className="cart">
+            <aside className="cart" data-testid="cart">
               <h2>Cart</h2>
               {cartItems.length === 0 ? (
                 <p>No items yet.</p>
               ) : (
                 <>
                   {cartItems.map((item) => (
-                    <div className="cartItem" key={item.id}>
+                    <div className="cartItem" key={item.id} data-testid="cart-item">
                       <span>{item.name}</span>
                       <div className="qtyControls">
                         <button onClick={() => decreaseItem(item.id)}>-</button>
@@ -384,9 +435,69 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  <div className="cartTotal">Total: {currency(cartTotal)}</div>
+
+                  <div className="discountBox">
+                    <label className="discountLabel" htmlFor="discount-code">
+                      Discount code
+                    </label>
+                    <div className="discountRow">
+                      <input
+                        id="discount-code"
+                        data-testid="discount-code-input"
+                        type="text"
+                        value={discountInput}
+                        placeholder="e.g. SAVE10"
+                        disabled={Boolean(appliedDiscount)}
+                        onChange={(event) => setDiscountInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            applyDiscount();
+                          }
+                        }}
+                      />
+                      {appliedDiscount ? (
+                        <button
+                          className="secondaryBtn"
+                          data-testid="remove-discount-button"
+                          onClick={removeDiscount}
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <button
+                          className="addBtn"
+                          data-testid="apply-discount-button"
+                          onClick={applyDiscount}
+                          disabled={discountLoading}
+                        >
+                          {discountLoading ? "Applying..." : "Apply"}
+                        </button>
+                      )}
+                    </div>
+                    {discountError ? (
+                      <p className="discountError" data-testid="discount-error">
+                        {discountError}
+                      </p>
+                    ) : null}
+                    {appliedDiscount ? (
+                      <p className="discountApplied" data-testid="discount-message">
+                        Code {appliedDiscount.code} applied (-
+                        {currency(appliedDiscount.discount_amount)})
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {appliedDiscount ? (
+                    <div className="cartSubtotal" data-testid="cart-subtotal">
+                      Subtotal: {currency(cartTotal)}
+                    </div>
+                  ) : null}
+                  <div className="cartTotal" data-testid="cart-total">
+                    Total: {currency(orderTotal)}
+                  </div>
                   <button
                     className="checkoutBtn"
+                    data-testid="checkout-button"
                     onClick={startCheckout}
                     disabled={checkoutLoading || cartItems.length === 0}
                   >
