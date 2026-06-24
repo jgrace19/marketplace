@@ -380,6 +380,59 @@ body {
   z-index: 20;
 }
 
+.discountBox {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeeea;
+}
+
+.discountLabel {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4a4f49;
+  margin-bottom: 6px;
+}
+
+.discountRow {
+  display: flex;
+  gap: 8px;
+}
+
+.discountRow input {
+  flex: 1;
+  border: 1px solid #d2d6d0;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font: inherit;
+}
+
+.discountRow .addBtn,
+.discountRow .secondaryBtn {
+  margin-top: 0;
+  width: auto;
+  white-space: nowrap;
+}
+
+.discountError {
+  margin: 8px 0 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.discountApplied {
+  margin: 8px 0 0;
+  color: #176a2d;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.cartSubtotal {
+  margin-top: 10px;
+  color: #4a4f49;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 980px) {
   .content {
     grid-template-columns: 1fr;

@@ -9,9 +9,11 @@ import requests
 import stripe
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+from discounts import DiscountError, compute_discount
 
 
 AMAZON_URL = "https://www.amazon.com/"
@@ -406,6 +408,12 @@ class CheckoutItem(BaseModel):
 
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
+    discount_code: str = Field(default="", max_length=40)
+
+
+class DiscountValidateRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    subtotal: float = Field(gt=0)
 
 
 def configure_stripe() -> None:
@@ -442,10 +450,49 @@ def list_products(query: str = Query(default="", min_length=0), limit: int = Que
     return {"items": [asdict(p) for p in products], "count": len(products)}
 
 
+@app.post("/api/discount/validate")
+def validate_discount(payload: DiscountValidateRequest) -> dict:
+    try:
+        result = compute_discount(payload.subtotal, payload.code)
+    except DiscountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "valid": True,
+        "code": result.code,
+        "discount_amount": result.discount_amount,
+        "new_total": result.new_total,
+    }
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
     configure_stripe()
     line_items = []
+
+    subtotal = sum(item.price * item.quantity for item in payload.items)
+
+    discounts = []
+    if payload.discount_code.strip():
+        try:
+            result = compute_discount(subtotal, payload.discount_code)
+        except DiscountError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if result.discount_amount > 0:
+            try:
+                coupon = stripe.Coupon.create(
+                    amount_off=int(round(result.discount_amount * 100)),
+                    currency="usd",
+                    duration="once",
+                    name=f"Discount {result.code}",
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Unable to apply discount code: {exc}",
+                ) from exc
+            discounts.append({"coupon": coupon.id})
 
     for item in payload.items:
         unit_amount = int(round(item.price * 100))
@@ -474,6 +521,7 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=line_items,
+            discounts=discounts or None,
             success_url=f"{FRONTEND_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{FRONTEND_URL}/?checkout=cancel",
         )
@@ -505,3 +553,45 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "amount_total": session.amount_total,
         "currency": session.currency,
     }
+
+
+@app.post("/api/checkout/webhook")
+async def stripe_webhook(request: Request) -> dict:
+    """Confirm an order from Stripe's signed webhook callback.
+
+    Stripe signs every webhook with the endpoint secret; we verify that
+    signature before trusting the payload. A bad signature is a client error
+    (400), not a server error.
+    """
+    configure_stripe()
+
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+    if not webhook_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Missing STRIPE_WEBHOOK_SECRET in environment.",
+        )
+
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
+    except stripe.error.SignatureVerificationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Stripe webhook signature.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Stripe webhook payload.",
+        ) from exc
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        print(
+            "[webhook] checkout.session.completed "
+            f"session={session.get('id')} amount_total={session.get('amount_total')}"
+        )
+
+    return {"received": True, "type": event["type"]}
