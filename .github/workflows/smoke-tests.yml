@@ -36,27 +36,10 @@ jobs:
           npm install
           npx playwright install --with-deps chromium
 
-      - name: Start backend (port 8000)
-        working-directory: backend
-        run: |
-          uvicorn main:app --port 8000 > backend.log 2>&1 &
-          echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
-
-      - name: Start frontend (port 5173)
-        working-directory: frontend
-        run: |
-          npm run dev -- --host > frontend.log 2>&1 &
-          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
-
-      - name: Wait for services
-        run: |
-          npx --yes wait-on \
-            http://127.0.0.1:8000/api/health \
-            http://localhost:5173 \
-            --timeout 60000
-
       - name: Run smoke test suite
         working-directory: tests/e2e
+        # Playwright starts the backend and frontend (see webServer in
+        # playwright.config.ts) and waits for both before running the tests.
         run: npx playwright test smoke.spec.ts
         env:
           CI: 'true'

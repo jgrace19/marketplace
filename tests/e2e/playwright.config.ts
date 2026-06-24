@@ -21,4 +21,29 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
+  // In CI, let Playwright own the lifecycle of both services so they stay up for
+  // the full test run. Locally we leave this undefined and expect the app to be
+  // started separately (see start-ecommerce-services skill).
+  webServer: process.env.CI
+    ? [
+        {
+          command: "uvicorn main:app --port 8000",
+          cwd: "../../backend",
+          url: "http://127.0.0.1:8000/api/health",
+          timeout: 120_000,
+          reuseExistingServer: false,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+        {
+          command: "npm run dev",
+          cwd: "../../frontend",
+          url: "http://localhost:5173",
+          timeout: 120_000,
+          reuseExistingServer: false,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      ]
+    : undefined,
 });
