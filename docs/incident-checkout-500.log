@@ -1,0 +1,25 @@
+# Incident: checkout confirm returning 500 since the last deploy.
+# Source: api-prod uvicorn logs (paste this into Cursor for the root-cause beat).
+
+2026-06-23T22:14:07.812Z INFO     api-prod  POST /api/checkout/webhook
+2026-06-23T22:14:07.815Z ERROR    api-prod  Exception in ASGI application
+Traceback (most recent call last):
+  File "/app/.venv/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 426, in run_asgi
+    result = await app(self.scope, self.receive, self.send)
+  File "/app/.venv/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/app/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/app/backend/main.py", line 578, in stripe_webhook
+    event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
+  File "/app/.venv/lib/python3.11/site-packages/stripe/_webhook.py", line 47, in construct_event
+    WebhookSignature.verify_header(payload, sig_header, secret, tolerance)
+  File "/app/.venv/lib/python3.11/site-packages/stripe/_webhook.py", line 122, in verify_header
+    raise SignatureVerificationError(
+stripe.error.SignatureVerificationError: No signatures found matching the expected signature for payload
+2026-06-23T22:14:07.816Z INFO     api-prod  POST /api/checkout/webhook 500 Internal Server Error 4ms
+
+2026-06-23T22:14:09.201Z INFO     api-prod  POST /api/checkout/webhook
+2026-06-23T22:14:09.204Z ERROR    api-prod  Exception in ASGI application
+stripe.error.SignatureVerificationError: No signatures found matching the expected signature for payload
+2026-06-23T22:14:09.205Z INFO     api-prod  POST /api/checkout/webhook 500 Internal Server Error 3ms

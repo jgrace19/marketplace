@@ -576,11 +576,6 @@ async def stripe_webhook(request: Request) -> dict:
 
     try:
         event = stripe.Webhook.construct_event(payload, signature, webhook_secret)
-    except stripe.error.SignatureVerificationError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Stripe webhook signature.",
-        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
