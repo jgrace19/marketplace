@@ -1,0 +1,13 @@
+---
+description: Conventions for Pytest unit tests of backend business logic
+globs: backend/tests/**/*.py
+alwaysApply: false
+---
+# Pytest Unit Test Rules
+- Test pure business logic in isolation; do not start the web server or call Stripe from unit tests.
+- Use @pytest.mark.parametrize for boundary, valid, invalid, and rounding cases. One parametrized test beats many copy-pasted ones; source rows from the test-data matrix.
+- Cover the happy path and at least one failure/edge case per behavior (mirrors the repo's backend-tests rule).
+- Assert on exact values for money math (e.g. 3.33), not just truthiness. Pin the clock and any redemption state by injecting them, never via real time.
+- Name tests by behavior: test_<unit>_<condition>_<expected>. Keep one assertion theme per test.
+- Use fixtures for shared setup; keep test data explicit and readable, not hidden in helpers.
+- Tests must be deterministic and order-independent.

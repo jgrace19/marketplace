@@ -1,8 +1,9 @@
 name: Agent E2E Exploration
 
+# Disabled: this workflow no longer runs automatically on pull requests.
+# It can still be triggered manually from the Actions tab if needed.
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   agent-e2e:
