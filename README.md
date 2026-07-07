@@ -73,6 +73,38 @@ docker compose up --build -d
 docker compose down
 ```
 
+## Run on Kubernetes (kind) + Datadog
+
+Deploys the same app to a local `kind` cluster with the Datadog Operator, real
+resource requests/limits, liveness/readiness probes, an HPA, and metrics-server.
+Requires `docker`, `kind`, `kubectl`, and `helm`.
+
+1. Set `DD_API_KEY` and `DD_SITE` in `.env` (same as above).
+
+2. Bring everything up (builds images, creates the cluster, loads images,
+   installs Datadog + metrics-server, deploys the app):
+
+```bash
+./k8s/deploy.sh
+```
+
+3. Open `http://localhost:8080` (backend API at `http://localhost:8000`). Then in Datadog:
+
+- APM: service `marketplace-backend`, env `local`
+- Infrastructure > Kubernetes: pod/container resource utilization vs. requests
+- Logs: `marketplace-backend` / `marketplace-frontend`
+
+4. Inspect and tear down:
+
+```bash
+kubectl -n marketplace get pods
+kubectl -n marketplace top pods      # requests-vs-usage for right-sizing
+./k8s/teardown.sh
+```
+
+Manifests live in `k8s/`. The backend's `resources` are intentionally generous
+so observed utilization can drive a right-sizing change.
+
 ## API
 
 - `GET /api/health`
