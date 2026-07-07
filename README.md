@@ -45,6 +45,34 @@ STRIPE_WEBHOOK_SECRET=whsec_... # optional
 
 Then use the cart "Checkout with Stripe" button in the frontend.
 
+## Run with Docker + Datadog
+
+Runs the backend (FastAPI, APM-instrumented via `ddtrace`), the frontend (built and served by nginx), and the Datadog Agent, which collects traces, container logs, and metrics.
+
+1. Set your Datadog credentials in `.env`:
+
+```bash
+DD_API_KEY=<your-datadog-api-key>   # https://app.datadoghq.com/organization-settings/api-keys
+DD_SITE=datadoghq.com               # match your Datadog region
+```
+
+2. Build and start:
+
+```bash
+docker compose up --build -d
+```
+
+3. Open the app at `http://localhost:8080` (backend API at `http://localhost:8000`). Click around to generate traffic, then view telemetry in Datadog:
+
+- APM traces: service `marketplace-backend`, env `local`
+- Container logs and metrics under the Infrastructure / Logs sections
+
+4. Stop everything:
+
+```bash
+docker compose down
+```
+
 ## API
 
 - `GET /api/health`
