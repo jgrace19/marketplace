@@ -1,0 +1,40 @@
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog
+  namespace: datadog
+spec:
+  global:
+    site: us5.datadoghq.com
+    # kind nodes can't auto-resolve a cloud hostname; pin it to the node name.
+    clusterName: marketplace
+    kubelet:
+      tlsVerify: false
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+  override:
+    nodeAgent:
+      env:
+        - name: DD_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+  features:
+    apm:
+      enabled: true
+      hostPortConfig:
+        enabled: true
+        hostPort: 8126
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+    liveProcessCollection:
+      enabled: true
+    orchestratorExplorer:
+      enabled: true
+    # Admission controller auto-injects DD_AGENT_HOST and UST tags into pods.
+    admissionController:
+      enabled: true
+      mutateUnlabelled: false

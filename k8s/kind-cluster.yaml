@@ -1,0 +1,14 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: marketplace
+nodes:
+  - role: control-plane
+    # Map NodePorts to the host so the browser can reach the app the same way
+    # it did under Docker Compose (frontend :8080, backend :8000).
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30800
+        hostPort: 8000
+        protocol: TCP

@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: marketplace
+  labels:
+    app: marketplace-backend
+    tags.datadoghq.com/env: local
+    tags.datadoghq.com/service: marketplace-backend
+    tags.datadoghq.com/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: marketplace-backend
+  template:
+    metadata:
+      labels:
+        app: marketplace-backend
+        # Datadog Unified Service Tagging.
+        tags.datadoghq.com/env: local
+        tags.datadoghq.com/service: marketplace-backend
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        ad.datadoghq.com/backend.logs: '[{"source":"python","service":"marketplace-backend"}]'
+    spec:
+      containers:
+        - name: backend
+          image: marketplace-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            # APM: send traces to the node's Datadog agent (host IP via downward API).
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_TRACE_AGENT_PORT
+              value: "8126"
+            - name: DD_ENV
+              value: local
+            - name: DD_SERVICE
+              value: marketplace-backend
+            - name: DD_VERSION
+              value: "1.0.0"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: CORS_ORIGINS
+              value: "http://localhost:8080,http://127.0.0.1:8080"
+            - name: FRONTEND_URL
+              value: "http://localhost:8080"
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: STRIPE_SECRET_KEY
+                  optional: true
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: STRIPE_WEBHOOK_SECRET
+                  optional: true
+          # NOTE: intentionally generous for the right-sizing demo. Observed
+          # utilization in Datadog should drive these down to realistic values.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: marketplace
+  labels:
+    app: marketplace-backend
+spec:
+  type: NodePort
+  selector:
+    app: marketplace-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30800

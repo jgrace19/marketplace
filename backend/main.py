@@ -253,6 +253,15 @@ GROCERY_FALLBACK_PRODUCTS = [
 
 load_dotenv()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "http://localhost:8080,http://127.0.0.1:8080"
+)
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
 
 
 @dataclass
@@ -422,7 +431,7 @@ app = FastAPI(title="Ecommerce Simulator API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -440,6 +449,18 @@ def list_products(query: str = Query(default="", min_length=0), limit: int = Que
     if query.strip():
         products = [p for p in products if _matches_partial_terms(p, query)]
     return {"items": [asdict(p) for p in products], "count": len(products)}
+
+
+@app.get("/api/recommendations")
+def get_recommendations() -> dict:
+    """Return today's personalized deals (average price of discounted items)."""
+    products = get_products(limit=24)
+    discounted = [p for p in products if p.price < 1.00]
+    average_deal_price = sum(p.price for p in discounted) / len(discounted)
+    return {
+        "average_deal_price": round(average_deal_price, 2),
+        "items": [asdict(p) for p in discounted],
+    }
 
 
 @app.post("/api/checkout/session")

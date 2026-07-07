@@ -1,0 +1,21 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+  namespace: marketplace
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        # HPA scales on utilization relative to the CPU *request*, which is
+        # exactly why right-sizing requests matters. Requires metrics-server.
+        target:
+          type: Utilization
+          averageUtilization: 70
