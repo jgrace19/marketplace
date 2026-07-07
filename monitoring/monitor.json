@@ -2,7 +2,7 @@
   "name": "[marketplace-backend] High error rate on /api/recommendations",
   "type": "query alert",
   "query": "sum(last_5m):sum:trace.fastapi.request.errors{service:marketplace-backend,env:local}.as_count() > 5",
-  "message": "{{#is_alert}}\nmarketplace-backend is returning 5xx errors from APM error spans.\nThis is almost certainly a code-level exception (check the service's Errors tab for the top stack trace).\n\nRunbook:\n1. Open the failing trace and note the file:line in the stack.\n2. Confirm blast radius (which resource_name is erroring).\n3. Trigger the Cursor remediation automation to open a fix PR.\n{{/is_alert}}\n{{#is_recovery}}\nmarketplace-backend error rate has recovered.\n{{/is_recovery}}\n",
+  "message": "{{#is_alert}}\nmarketplace-backend is returning 5xx errors from APM error spans.\nThis is almost certainly a code-level exception (check the service's Errors tab for the top stack trace).\n\nRunbook:\n1. Open the failing trace and note the file:line in the stack.\n2. Confirm blast radius (which resource_name is erroring).\n3. Cursor remediation automation has been triggered to open a fix PR.\n\n@webhook-cursor-remediation\n{{/is_alert}}\n{{#is_recovery}}\nmarketplace-backend error rate has recovered.\n{{/is_recovery}}\n",
   "tags": [
     "service:marketplace-backend",
     "env:local",
