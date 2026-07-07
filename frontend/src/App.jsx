@@ -54,6 +54,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [cart, setCart] = useState({});
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [dealsLoading, setDealsLoading] = useState(false);
+  const [dealsNotice, setDealsNotice] = useState("");
   const [checkoutState, setCheckoutState] = useState({
     type: "idle",
     message: ""
@@ -134,6 +136,28 @@ export default function App() {
     () => cartItems.reduce((sum, item) => sum + (item?.price || 0) * item.quantity, 0),
     [cartItems]
   );
+
+  async function loadTodaysDeals() {
+    setDealsLoading(true);
+    setDealsNotice("");
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/recommendations`);
+      if (!response.ok) {
+        throw new Error("Today's Deals is unavailable right now. Please try again.");
+      }
+      const data = await response.json();
+      setDealsNotice(
+        `Today's average deal price is ${currency(data.average_deal_price)} across ${
+          (data.items || []).length
+        } items.`
+      );
+    } catch (err) {
+      setError(err.message || "Unexpected error.");
+    } finally {
+      setDealsLoading(false);
+    }
+  }
 
   function addToCart(productId) {
     setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
@@ -309,6 +333,10 @@ export default function App() {
           <section className="hero">
             <h1>Groceries delivered in as fast as 1 hour</h1>
             <p>Shop fresh produce, dairy, bakery, and pantry essentials.</p>
+            <button className="dealsBtn" onClick={loadTodaysDeals} disabled={dealsLoading}>
+              {dealsLoading ? "Loading deals..." : "Today's Deals"}
+            </button>
+            {dealsNotice ? <p className="status">{dealsNotice}</p> : null}
           </section>
 
           <header className="header">

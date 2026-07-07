@@ -451,6 +451,18 @@ def list_products(query: str = Query(default="", min_length=0), limit: int = Que
     return {"items": [asdict(p) for p in products], "count": len(products)}
 
 
+@app.get("/api/recommendations")
+def get_recommendations() -> dict:
+    """Return today's personalized deals (average price of discounted items)."""
+    products = get_products(limit=24)
+    discounted = [p for p in products if p.price < 1.00]
+    average_deal_price = sum(p.price for p in discounted) / len(discounted)
+    return {
+        "average_deal_price": round(average_deal_price, 2),
+        "items": [asdict(p) for p in discounted],
+    }
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
     configure_stripe()
