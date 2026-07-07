@@ -2,8 +2,8 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { Finding, Triage } from "./findings.js";
 import { TriageSchema } from "./findings.js";
 import {
+  consumeRunWithTimeout,
   startStreamHeartbeat,
-  waitForRunWithTimeout,
 } from "./agent-runtime.js";
 
 const TRIAGE_AGENT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -64,25 +64,27 @@ export async function runTriageAgent(
 
     const heartbeat = startStreamHeartbeat({ label: `triage:${finding.id}` });
     let lastText = "";
+    let result;
+    let timedOut = false;
+    let timeoutMs: number | undefined;
     try {
-      for await (const event of run.stream()) {
-        heartbeat.tick();
-        if (event.type === "assistant") {
-          for (const block of event.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              lastText = block.text;
+      ({ result, timedOut, timeoutMs } = await consumeRunWithTimeout(
+        run,
+        TRIAGE_AGENT_TIMEOUT_MS,
+        (event) => {
+          heartbeat.tick();
+          if (event.type === "assistant") {
+            for (const block of event.message.content) {
+              if (block.type === "text" && block.text.trim()) {
+                lastText = block.text;
+              }
             }
           }
-        }
-      }
+        },
+      ));
     } finally {
       heartbeat.stop();
     }
-
-    const { result, timedOut, timeoutMs } = await waitForRunWithTimeout(
-      run,
-      TRIAGE_AGENT_TIMEOUT_MS,
-    );
 
     if (timedOut) {
       return {

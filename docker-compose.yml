@@ -1,0 +1,63 @@
+services:
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: marketplace-datadog-agent
+    pid: host
+    environment:
+      DD_API_KEY: ${DD_API_KEY:?set DD_API_KEY in .env}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      # Enable APM trace collection over TCP from the app containers.
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      # Enable container log collection.
+      DD_LOGS_ENABLED: "true"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "true"
+      # Live container + process metrics.
+      DD_PROCESS_AGENT_ENABLED: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    ports:
+      - "8126:8126"   # APM traces
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: marketplace-backend
+    environment:
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      # Datadog APM configuration.
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_PORT: "8126"
+      DD_SERVICE: marketplace-backend
+      DD_ENV: local
+      DD_VERSION: "1.0.0"
+      DD_LOGS_INJECTION: "true"
+    labels:
+      com.datadoghq.tags.service: "marketplace-backend"
+      com.datadoghq.tags.env: "local"
+      com.datadoghq.tags.version: "1.0.0"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - datadog-agent
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://127.0.0.1:8000}
+    container_name: marketplace-frontend
+    labels:
+      com.datadoghq.tags.service: "marketplace-frontend"
+      com.datadoghq.tags.env: "local"
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
