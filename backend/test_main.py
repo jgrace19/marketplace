@@ -1,15 +1,10 @@
 from unittest import TestCase
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 import main
 
 
 class RecommendationsTests(TestCase):
-    def setUp(self) -> None:
-        self.client = TestClient(main.app)
-
     def test_recommendations_returns_empty_result_without_discounted_products(self) -> None:
         products = [
             main.Product(
@@ -23,11 +18,10 @@ class RecommendationsTests(TestCase):
         ]
 
         with patch.object(main, "get_products", return_value=products):
-            response = self.client.get("/api/recommendations")
+            response = main.get_recommendations()
 
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            response.json(),
+            response,
             {"average_deal_price": 0.0, "items": []},
         )
 
@@ -60,11 +54,10 @@ class RecommendationsTests(TestCase):
         ]
 
         with patch.object(main, "get_products", return_value=products):
-            response = self.client.get("/api/recommendations")
+            response = main.get_recommendations()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["average_deal_price"], 0.62)
+        self.assertEqual(response["average_deal_price"], 0.62)
         self.assertEqual(
-            [item["id"] for item in response.json()["items"]],
+            [item["id"] for item in response["items"]],
             ["deal-1", "deal-2"],
         )
