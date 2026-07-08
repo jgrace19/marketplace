@@ -463,6 +463,17 @@ def get_recommendations() -> dict:
     }
 
 
+@app.get("/api/price-check")
+def price_check(url: str = Query(...)) -> dict:
+    """Fetch an external product page and return its size, for price comparison."""
+    response = requests.get(url, headers=REQUEST_HEADERS)
+    return {
+        "url": url,
+        "status_code": response.status_code,
+        "content_length": len(response.content),
+    }
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
     configure_stripe()
