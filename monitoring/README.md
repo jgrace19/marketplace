@@ -1,9 +1,10 @@
 # Datadog monitoring
 
-Monitor that catches the intentional 500 from `GET /api/recommendations`
-(`ZeroDivisionError` in `backend/main.py`). It alerts on APM error spans for
-the `marketplace-backend` service and is the trigger point for a Cursor
-remediation automation.
+Monitor that catches 5xx responses from `GET /api/recommendations`. It alerts
+on APM error spans for the `marketplace-backend` service and is the trigger
+point for a Cursor remediation automation. A previous incident was caused by a
+`ZeroDivisionError` when the endpoint tried to average an empty discounted item
+list.
 
 ## Apply it
 
@@ -34,6 +35,10 @@ Click **Today's Deals** in the app, or:
 ```bash
 for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:8000/api/recommendations; done
 ```
+
+The recommendations endpoint should return `200` with an empty deal list when
+no products match the discount criteria; this command should not fire the
+monitor unless a new backend exception is introduced.
 
 > Note: a brand-new service takes a few minutes to appear in the APM service
 > catalog before the monitor can evaluate its metrics.
