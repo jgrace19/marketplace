@@ -1,9 +1,8 @@
 # Datadog monitoring
 
-Monitor that catches the intentional 500 from `GET /api/recommendations`
-(`ZeroDivisionError` in `backend/main.py`). It alerts on APM error spans for
-the `marketplace-backend` service and is the trigger point for a Cursor
-remediation automation.
+Monitor that catches 5xx responses from `GET /api/recommendations`. It alerts
+on APM error spans for the `marketplace-backend` service and is the trigger
+point for a Cursor remediation automation.
 
 ## Apply it
 
