@@ -1,9 +1,8 @@
 # Datadog monitoring
 
-Monitor that catches the intentional 500 from `GET /api/recommendations`
-(`ZeroDivisionError` in `backend/main.py`). It alerts on APM error spans for
-the `marketplace-backend` service and is the trigger point for a Cursor
-remediation automation.
+Monitor that catches 5xx responses from `GET /api/recommendations`. It alerts
+on APM error spans for the `marketplace-backend` service and is the trigger
+point for a Cursor remediation automation.
 
 ## Apply it
 
@@ -27,13 +26,18 @@ Then either:
 - Scope to the endpoint by adding `resource_name:get_/api/recommendations` to the
   query once you confirm the tag value in the APM Errors tab.
 
-## Fire it on demand (for the demo)
+## Generate validation traffic
 
-Click **Today's Deals** in the app, or:
+Click **Today's Deals** in the app, or curl the endpoint to send healthy traffic
+through the monitored resource:
 
 ```bash
 for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:8000/api/recommendations; done
 ```
+
+The endpoint should return 200 for these requests. To test the alert itself,
+use a non-production fault-injection change or an isolated failing route so the
+demo app does not depend on a known 500 response.
 
 > Note: a brand-new service takes a few minutes to appear in the APM service
 > catalog before the monitor can evaluate its metrics.
