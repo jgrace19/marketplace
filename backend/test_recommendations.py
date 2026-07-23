@@ -11,6 +11,7 @@ def product(id: str, price: float) -> Product:
         description="Test product",
         price=price,
         image_url="https://example.com/product.png",
+        source="test",
     )
 
 
