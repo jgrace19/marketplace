@@ -28,8 +28,9 @@ services:
     environment:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      # Host ports differ from native local (8000/5173) so both can run side by side.
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
       # Datadog APM configuration.
       DD_AGENT_HOST: datadog-agent
       DD_TRACE_AGENT_PORT: "8126"
@@ -42,7 +43,8 @@ services:
       com.datadoghq.tags.env: "local"
       com.datadoghq.tags.version: "1.0.0"
     ports:
-      - "8000:8000"
+      # Native local uses 8000; Docker publishes 8001 -> container 8000.
+      - "8001:8000"
     depends_on:
       - datadog-agent
     restart: unless-stopped
@@ -51,13 +53,15 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://127.0.0.1:8000}
+        # Browser calls the host-published Docker backend port.
+        VITE_API_BASE: ${VITE_API_BASE:-http://127.0.0.1:8001}
     container_name: marketplace-frontend
     labels:
       com.datadoghq.tags.service: "marketplace-frontend"
       com.datadoghq.tags.env: "local"
     ports:
-      - "8080:80"
+      # Native Vite uses 5173; Docker nginx publishes 8081 -> container 80.
+      - "8081:80"
     depends_on:
       - backend
     restart: unless-stopped

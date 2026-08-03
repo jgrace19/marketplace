@@ -1,17 +1,30 @@
 # Ecommerce Simulator (FastAPI + React)
 
-Small full-stack ecommerce simulation app with:
+Small full-stack ecommerce simulation app (FreshCart) with:
 
-- Browse products
-- Search products
-- Add to cart (frontend state)
+- Multi-store marketplace (pick a nearby store, then shop that catalog)
+- Canned zip → store list mapping (demo location, no geocoding)
+- Store-scoped product search
+- One-store cart + Stripe Checkout
 
-Backend attempts to pull products/images from the Amazon homepage. If Amazon blocks scraping or page markup does not match, it automatically falls back to a public product feed (`dummyjson`) so the app still works.
+Catalog data is a static grocery fallback partitioned by store (see `backend/stores.py`).
 
 ## Project Structure
 
-- `backend/` - FastAPI API
-- `frontend/` - React + Vite app
+- `backend/` - FastAPI API (`main.py`, `stores.py`)
+- `frontend/` - React + Vite SPA
+- `docs/multi-store-marketplace.md` - multi-store feature notes
+
+## API
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/stores?zip=` | Store list for a canned zip (`10002`, `94107`, `60614`) |
+| `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
+| `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
+| `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata |
+| `GET` | `/api/checkout/session-status?session_id=` | Verify payment |
 
 ## Run Backend
 
@@ -62,10 +75,12 @@ DD_SITE=datadoghq.com               # match your Datadog region
 docker compose up --build -d
 ```
 
-3. Open the app at `http://localhost:8080` (backend API at `http://localhost:8000`). Click around to generate traffic, then view telemetry in Datadog:
+3. Open the app at `http://localhost:8081` (backend API at `http://localhost:8001`). Click around to generate traffic, then view telemetry in Datadog:
 
 - APM traces: service `marketplace-backend`, env `local`
 - Container logs and metrics under the Infrastructure / Logs sections
+
+> Native local (Vite `5173` + API `8000`) can run beside Docker. Docker publishes **8001** (API) and **8081** (UI) so the ports do not collide.
 
 4. Stop everything:
 
@@ -105,8 +120,6 @@ kubectl -n marketplace top pods      # requests-vs-usage for right-sizing
 Manifests live in `k8s/`. The backend's `resources` are intentionally generous
 so observed utilization can drive a right-sizing change.
 
-## API
+## API (quick reference)
 
-- `GET /api/health`
-- `GET /api/products?query=<text>&limit=<n>`
-- `POST /api/checkout/session`
+See the API table near the top of this README for the full multi-store endpoints.
