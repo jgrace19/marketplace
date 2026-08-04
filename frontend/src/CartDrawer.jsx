@@ -124,7 +124,7 @@ export default function CartDrawer({
                 {promoError}
               </p>
             ) : null}
-            {appliedPromo ? (
+            {appliedPromo && !promoError ? (
               <p className="promoSuccess" role="status">
                 {appliedPromo.code} applied · {appliedPromo.description}
               </p>
