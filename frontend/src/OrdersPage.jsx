@@ -46,8 +46,10 @@ function OrderStepper({ stageIndex }) {
         } else if (index === stageIndex) {
           state = "current";
         }
+        const isComplete = stageIndex >= ORDER_STAGES.length - 1;
+        const resolvedState = isComplete && index <= stageIndex ? "done" : state;
         return (
-          <li key={stage} className={`orderStep orderStep-${state}`}>
+          <li key={stage} className={`orderStep orderStep-${resolvedState}`}>
             <span className="orderStepDot" aria-hidden="true" />
             <span className="orderStepLabel">{stage}</span>
           </li>
