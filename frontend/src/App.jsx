@@ -171,6 +171,10 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [comparisonUrl, setComparisonUrl] = useState("");
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [comparisonResult, setComparisonResult] = useState(null);
+  const [comparisonError, setComparisonError] = useState("");
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -768,6 +772,26 @@ export default function App() {
     setProfileNotice("Profile saved.");
   }
 
+  async function checkComparisonPrice(event) {
+    event.preventDefault();
+    setComparisonLoading(true);
+    setComparisonResult(null);
+    setComparisonError("");
+    try {
+      const params = new URLSearchParams({ url: comparisonUrl.trim() });
+      const response = await fetch(`${API_BASE}/api/price-check?${params.toString()}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Unable to check that URL.");
+      }
+      setComparisonResult(data);
+    } catch (err) {
+      setComparisonError(err.message || "Unable to check that URL.");
+    } finally {
+      setComparisonLoading(false);
+    }
+  }
+
   function closeCartPanel() {
     pendingContinueRef.current = null;
     setCartPanel(null);
@@ -837,6 +861,16 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setActivePage("compare");
+              closeCartPanel();
+            }}
+          >
+            Compare prices
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1056,6 +1090,36 @@ export default function App() {
           <button className="dealsBtn" onClick={() => setActivePage("stores")}>
             Browse stores
           </button>
+        </section>
+      ) : null}
+
+      {activePage === "compare" ? (
+        <section className="comparePage">
+          <h2>Compare a product page</h2>
+          <p>Enter a public product URL to confirm it is available for price comparison.</p>
+          <form className="compareForm" onSubmit={checkComparisonPrice}>
+            <label htmlFor="comparison-url">Product URL</label>
+            <div className="compareInputRow">
+              <input
+                id="comparison-url"
+                value={comparisonUrl}
+                onChange={(event) => setComparisonUrl(event.target.value)}
+                placeholder="https://www.example.com/product"
+                required
+              />
+              <button type="submit" disabled={comparisonLoading}>
+                {comparisonLoading ? "Checking..." : "Check URL"}
+              </button>
+            </div>
+          </form>
+          {comparisonError ? <p className="compareMessage compareError">{comparisonError}</p> : null}
+          {comparisonResult ? (
+            <div className="compareMessage compareSuccess">
+              <strong>URL reached successfully.</strong>
+              <span>HTTP status {comparisonResult.status_code}</span>
+              <span>{comparisonResult.content_length.toLocaleString()} bytes received</span>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import ipaddress
 import os
 from typing import List, Optional
 import re
+from urllib.parse import urlsplit
 
+import requests
 import stripe
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
@@ -30,6 +33,8 @@ CORS_ORIGINS = [
     for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
     if origin.strip()
 ]
+REQUEST_HEADERS = {"User-Agent": "FreshCart-PriceCheck/1.0"}
+PRICE_CHECK_TIMEOUT_SECONDS = 10
 
 
 @dataclass
@@ -82,6 +87,37 @@ def _require_store(store_id: str) -> str:
         raise HTTPException(status_code=400, detail="store_id is required.")
     if get_store(cleaned) is None:
         raise HTTPException(status_code=404, detail=f"Unknown store_id '{cleaned}'.")
+    return cleaned
+
+
+def _validate_price_check_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    try:
+        parsed = urlsplit(cleaned)
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="A valid http(s) URL is required.") from exc
+
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or port is not None and not 1 <= port <= 65535
+    ):
+        raise HTTPException(status_code=400, detail="A valid http(s) URL is required.")
+
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        raise HTTPException(status_code=400, detail="A public http(s) URL is required.")
+
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        raise HTTPException(status_code=400, detail="A public http(s) URL is required.")
+
     return cleaned
 
 
@@ -159,6 +195,27 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
         "average_deal_price": average_deal_price,
         "items": [asdict(p) for p in discounted],
         "store_id": resolved_store,
+    }
+
+
+@app.get("/api/price-check")
+def price_check(url: str = Query(min_length=1)) -> dict:
+    validated_url = _validate_price_check_url(url)
+    try:
+        response = requests.get(
+            validated_url,
+            headers=REQUEST_HEADERS,
+            timeout=PRICE_CHECK_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to reach the comparison URL.",
+        ) from exc
+
+    return {
+        "status_code": response.status_code,
+        "content_length": len(response.content),
     }
 
 
