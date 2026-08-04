@@ -20,6 +20,7 @@ export default function CartDrawer({
   promoLoading,
   otherCarts,
   checkoutLoading,
+  cartLocked,
   onClose,
   onIncrease,
   onDecrease,
@@ -34,7 +35,13 @@ export default function CartDrawer({
 
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label={`${storeName} cart`}>
-      <button type="button" className="cartOverlayBackdrop" onClick={onClose} aria-label="Close" />
+      <button
+        type="button"
+        className="cartOverlayBackdrop"
+        onClick={onClose}
+        aria-label="Close"
+        disabled={cartLocked}
+      />
       <aside className="cartDrawerPanel">
         <header className="cartDrawerHeader">
           <div>
@@ -42,7 +49,13 @@ export default function CartDrawer({
             <p className="cartsHubSubhead">Shopping in {zip}</p>
             <p className="cartDrawerFulfillment">{fulfillment}</p>
           </div>
-          <button type="button" className="cartPanelClose" onClick={onClose} aria-label="Close cart">
+          <button
+            type="button"
+            className="cartPanelClose"
+            onClick={onClose}
+            aria-label="Close cart"
+            disabled={cartLocked}
+          >
             ×
           </button>
         </header>
@@ -55,6 +68,7 @@ export default function CartDrawer({
                 type="button"
                 className="cartSwitcherChip"
                 onClick={() => onSwitchCart(cart.storeId)}
+                disabled={cartLocked}
               >
                 {cart.storeName} +{cart.itemCount}
               </button>
@@ -81,11 +95,17 @@ export default function CartDrawer({
                       type="button"
                       onClick={() => onDecrease(item.id)}
                       aria-label={item.quantity <= 1 ? `Remove ${item.name}` : `Decrease ${item.name}`}
+                      disabled={cartLocked}
                     >
                       {item.quantity <= 1 ? "×" : "−"}
                     </button>
                     <span>{item.quantity}</span>
-                    <button type="button" onClick={() => onIncrease(item)} aria-label={`Increase ${item.name}`}>
+                    <button
+                      type="button"
+                      onClick={() => onIncrease(item)}
+                      aria-label={`Increase ${item.name}`}
+                      disabled={cartLocked}
+                    >
                       +
                     </button>
                   </div>
@@ -111,10 +131,11 @@ export default function CartDrawer({
                 onChange={(event) => onPromoInputChange(event.target.value)}
                 placeholder="Enter code"
                 autoComplete="off"
+                disabled={cartLocked}
               />
               <button
                 type="submit"
-                disabled={promoLoading || items.length === 0}
+                disabled={promoLoading || cartLocked || items.length === 0}
               >
                 {promoLoading ? "Applying..." : "Apply"}
               </button>

@@ -173,7 +173,7 @@ class CheckoutItem(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    items: List[CheckoutItem] = Field(min_length=1)
+    items: List[CheckoutItem] = Field(min_length=1, max_length=50)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
     promo_code: Optional[str] = Field(default=None, max_length=40)
@@ -257,6 +257,40 @@ def _stripe_product_data(item: CheckoutItem) -> dict:
     return product_data
 
 
+def _resolve_checkout_items(payload: CheckoutRequest) -> List[CheckoutItem]:
+    if not payload.store_id:
+        if payload.promo_code:
+            raise HTTPException(
+                status_code=400,
+                detail="store_id is required when applying a promo code.",
+            )
+        return payload.items
+
+    resolved_store = _require_store(payload.store_id)
+    catalog = {
+        product["id"]: product
+        for product in get_products_for_store(resolved_store, limit=60)
+    }
+    resolved_items = []
+    for requested_item in payload.items:
+        product = catalog.get(requested_item.id)
+        if product is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Product '{requested_item.id}' is not available at this store.",
+            )
+        resolved_items.append(
+            CheckoutItem(
+                id=product["id"],
+                name=product["name"],
+                price=product["price"],
+                quantity=requested_item.quantity,
+                image_url=product.get("image_url", ""),
+            )
+        )
+    return resolved_items
+
+
 def _build_discounted_line_items(
     items: List[CheckoutItem],
     unit_amounts: List[int],
@@ -314,8 +348,9 @@ def _build_discounted_line_items(
 
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
+    items = _resolve_checkout_items(payload)
     unit_amounts = []
-    for item in payload.items:
+    for item in items:
         unit_amount = _money_to_cents(item.price)
         if unit_amount <= 0:
             raise HTTPException(
@@ -326,13 +361,13 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
 
     subtotal_cents = sum(
         unit_amount * item.quantity
-        for item, unit_amount in zip(payload.items, unit_amounts)
+        for item, unit_amount in zip(items, unit_amounts)
     )
     promo = None
     if payload.promo_code:
         promo = validate_promo_code(payload.promo_code, subtotal_cents)
         line_items = _build_discounted_line_items(
-            payload.items,
+            items,
             unit_amounts,
             _money_to_cents(promo["total"]),
         )
@@ -346,7 +381,7 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
                 },
                 "quantity": item.quantity,
             }
-            for item, unit_amount in zip(payload.items, unit_amounts)
+            for item, unit_amount in zip(items, unit_amounts)
         ]
 
     configure_stripe()

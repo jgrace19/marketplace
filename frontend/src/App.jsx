@@ -178,6 +178,7 @@ export default function App() {
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const promoRequestIdRef = useRef(0);
+  const checkoutInFlightRef = useRef(false);
   const selectedZipRef = useRef(selectedZip);
   const storesZipRef = useRef("");
   const pendingContinueRef = useRef(null);
@@ -703,10 +704,11 @@ export default function App() {
   }
 
   async function startCheckout() {
-    if (cartItems.length === 0 || !activeStoreId) {
+    if (cartItems.length === 0 || !activeStoreId || checkoutInFlightRef.current) {
       return;
     }
 
+    checkoutInFlightRef.current = true;
     setCheckoutLoading(true);
     setError("");
     setCheckoutState({
@@ -733,7 +735,14 @@ export default function App() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || "Checkout failed.");
+        const detail = data.detail;
+        if (detail && typeof detail === "object" && detail.message) {
+          setPromoError(detail.message);
+        }
+        throw new Error(
+          (detail && typeof detail === "object" ? detail.message : detail) ||
+            "Checkout failed."
+        );
       }
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
@@ -747,6 +756,7 @@ export default function App() {
         message: "Checkout could not be started. Please try again."
       });
     } finally {
+      checkoutInFlightRef.current = false;
       setCheckoutLoading(false);
     }
   }
@@ -1264,6 +1274,7 @@ export default function App() {
           promoLoading={promoLoading}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
+          cartLocked={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
