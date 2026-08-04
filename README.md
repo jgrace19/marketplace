@@ -5,7 +5,7 @@ Small full-stack ecommerce simulation app (FreshCart) with:
 - Multi-store marketplace (pick a nearby store, then shop that catalog)
 - Canned zip → store list mapping (demo location, no geocoding)
 - Store-scoped product search
-- One-store cart + Stripe Checkout
+- Multi-store carts (persisted in localStorage) + per-store Stripe Checkout
 
 Catalog data is a static grocery fallback partitioned by store (see `backend/stores.py`).
 
@@ -14,6 +14,7 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 - `backend/` - FastAPI API (`main.py`, `stores.py`)
 - `frontend/` - React + Vite SPA
 - `docs/multi-store-marketplace.md` - multi-store feature notes
+- `docs/instacart-cart-parity.md` - multi-cart hub / drawer parity notes
 
 ## API
 
@@ -24,7 +25,7 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 | `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
 | `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
 | `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata |
-| `GET` | `/api/checkout/session-status?session_id=` | Verify payment |
+| `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` from session metadata |
 
 ## Run Backend
 

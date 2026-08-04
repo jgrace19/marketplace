@@ -84,7 +84,7 @@ STORES: Dict[str, Store] = {
         id="freshfare",
         name="FreshFare",
         slug="freshfare",
-        logo_url="https://images.unsplash.com/photo-1534723452862-4c874033d4d4?auto=format&fit=crop&w=200&q=80",
+        logo_url="https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=200&q=80",
         tags=["grocery", "offers", "ebt", "pickup", "fastest"],
         eta_label="By 6:45pm",
         distance_mi=1.6,
