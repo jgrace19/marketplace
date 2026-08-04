@@ -174,7 +174,7 @@ class CheckoutItem(BaseModel):
 
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1, max_length=50)
-    store_id: Optional[str] = None
+    store_id: str = Field(min_length=1, max_length=120)
     store_name: Optional[str] = None
     promo_code: Optional[str] = Field(default=None, max_length=40)
 
@@ -258,14 +258,6 @@ def _stripe_product_data(item: CheckoutItem) -> dict:
 
 
 def _resolve_checkout_items(payload: CheckoutRequest) -> List[CheckoutItem]:
-    if not payload.store_id:
-        if payload.promo_code:
-            raise HTTPException(
-                status_code=400,
-                detail="store_id is required when applying a promo code.",
-            )
-        return payload.items
-
     resolved_store = _require_store(payload.store_id)
     catalog = {
         product["id"]: product

@@ -136,6 +136,9 @@ class PromoCodeTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             main.CheckoutRequest(items=[item] * 51, store_id="greenmart")
 
+        with self.assertRaises(ValidationError):
+            main.CheckoutRequest(items=[item])
+
 
 if __name__ == "__main__":
     unittest.main()

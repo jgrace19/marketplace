@@ -178,6 +178,7 @@ export default function App() {
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const promoRequestIdRef = useRef(0);
+  const promoInFlightRef = useRef(false);
   const checkoutInFlightRef = useRef(false);
   const selectedZipRef = useRef(selectedZip);
   const storesZipRef = useRef("");
@@ -462,6 +463,7 @@ export default function App() {
     setAppliedPromo(null);
     setPromoError("");
     setPromoLoading(false);
+    promoInFlightRef.current = false;
   }, [activeStoreId]);
 
   useEffect(() => {
@@ -670,6 +672,7 @@ export default function App() {
     }
 
     const requestId = ++promoRequestIdRef.current;
+    promoInFlightRef.current = true;
     setPromoLoading(true);
     setPromoError("");
     try {
@@ -698,13 +701,19 @@ export default function App() {
       setPromoError(err.message || "Unable to apply that promo code.");
     } finally {
       if (requestId === promoRequestIdRef.current) {
+        promoInFlightRef.current = false;
         setPromoLoading(false);
       }
     }
   }
 
   async function startCheckout() {
-    if (cartItems.length === 0 || !activeStoreId || checkoutInFlightRef.current) {
+    if (
+      cartItems.length === 0 ||
+      !activeStoreId ||
+      promoInFlightRef.current ||
+      checkoutInFlightRef.current
+    ) {
       return;
     }
 

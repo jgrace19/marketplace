@@ -25,7 +25,7 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 | `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
 | `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
 | `GET` | `/api/promo/validate?code=&subtotal=` | Validate a promo and calculate its discount |
-| `POST` | `/api/checkout/session` | Stripe Checkout; optional store metadata and `promo_code` |
+| `POST` | `/api/checkout/session` | Stripe Checkout; requires `store_id`, with optional `store_name` and `promo_code` |
 | `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` from session metadata |
 
 ## Run Backend

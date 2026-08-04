@@ -171,7 +171,7 @@ export default function CartDrawer({
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutLoading || promoLoading || items.length === 0}
           >
             {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(total)}`}
           </button>
