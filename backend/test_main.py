@@ -49,7 +49,7 @@ class PromoCodeTests(unittest.TestCase):
                     id="greenmart-grocery-1",
                     name="Forged name",
                     price=0.01,
-                    quantity=2,
+                    quantity=1,
                 ),
                 main.CheckoutItem(
                     id="greenmart-grocery-2",
