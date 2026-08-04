@@ -1,0 +1,38 @@
+id: cart-checkout
+description: |
+  Cart and Stripe Checkout flow. Should run if the diff touches Stripe checkout
+  session creation, cart UI/state, payment verification, the post-redirect
+  success/cancel flow, order history, or shared product rendering used by the cart.
+paths:
+  - "backend/main.py"
+  - "backend/requirements.txt"
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/OrdersPage.jsx"
+  - "frontend/index.html"
+  - "frontend/package.json"
+  - ".env"
+focus_prompt: |
+  Probe the cart, Stripe Checkout, and Orders flow for bugs. Cover:
+  - Adding multiple distinct items to the cart and incrementing quantities from
+    the sticky cart sidebar. Header badge shows the aggregate count.
+  - Verifying the cart total matches `sum(price * quantity)` for the items shown.
+  - Running a full Stripe test-mode checkout using card 4242 4242 4242 4242,
+    any future date, and any 3-digit CVC. Compare the Stripe-side total to the
+    in-app cart total exactly (e.g., 2 bananas at $3.49 must charge $6.98, not
+    $3.49 or $6.97).
+  - After redirect back to the app, the success notice MUST only show when the
+    backend session-status endpoint reports `payment_status === "paid"`. If the
+    notice appears under any other payment_status, file a bug. The cart should
+    clear after a paid return.
+  - After a paid return, open Orders: exactly one new order should appear for
+    that Stripe session_id with status starting at "Placed", matching store
+    name/total/line items. Reloading must keep the order. Opening the order
+    should show the stepper (Placed → Shopping → On the way → Delivered) and
+    stage progression without a reload.
+  - Edge cases: rapid double-click on the Checkout button (should not create
+    two Stripe sessions), decrementing a cart item from 1 (item should leave
+    the cart cleanly), returning with `?checkout=cancel`, and clicking Checkout
+    while the cart is empty (button must be disabled). Duplicate return with the
+    same session_id must not create a second order.
+max_turns: 60

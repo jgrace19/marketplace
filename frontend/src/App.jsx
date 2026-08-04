@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import OrdersPage from "./OrdersPage";
 
 const API_BASE = "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
 const PROFILE_AVATAR_KEY = "freshcart-profile-avatar";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
+const CHECKOUT_SNAPSHOT_KEY = "freshcart-checkout-snapshot";
+const DEFAULT_STORE_ID = "freshcart";
+const DEFAULT_STORE_NAME = "FreshCart";
 const QUICK_FILTERS = [
   { label: "Produce", query: "apple banana avocado spinach strawberry" },
   { label: "Dairy", query: "milk yogurt eggs" },
@@ -45,6 +50,39 @@ function initialsFromName(name) {
   return chunks.map((part) => part[0].toUpperCase()).join("");
 }
 
+function readOrdersStorage() {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOrdersStorage(orders) {
+  window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+}
+
+function readCheckoutSnapshot() {
+  try {
+    const raw = window.sessionStorage.getItem(CHECKOUT_SNAPSHOT_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState("shop");
   const [products, setProducts] = useState([]);
@@ -58,6 +96,7 @@ export default function App() {
     type: "idle",
     message: ""
   });
+  const [orders, setOrders] = useState(() => readOrdersStorage());
   const [profile, setProfile] = useState(createEmptyProfile());
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
@@ -152,6 +191,46 @@ export default function App() {
     });
   }
 
+  function persistOrder(session, snapshot) {
+    const sessionId = session?.session_id;
+    if (!sessionId) {
+      return;
+    }
+
+    const existing = readOrdersStorage();
+    if (existing.some((order) => order.session_id === sessionId)) {
+      setOrders(existing);
+      return;
+    }
+
+    const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+    const snapshotTotal = items.reduce(
+      (sum, item) => sum + (item?.price || 0) * (item?.quantity || 0),
+      0
+    );
+    const amountTotal =
+      typeof session.amount_total === "number" ? session.amount_total / 100 : snapshotTotal;
+
+    const nextOrder = {
+      session_id: sessionId,
+      store_id: snapshot?.store_id || DEFAULT_STORE_ID,
+      store_name: snapshot?.store_name || DEFAULT_STORE_NAME,
+      items: items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image_url: item.image_url
+      })),
+      total: amountTotal,
+      created_at: new Date().toISOString()
+    };
+
+    const nextOrders = [nextOrder, ...existing];
+    writeOrdersStorage(nextOrders);
+    setOrders(nextOrders);
+  }
+
   async function verifyCheckout(sessionId) {
     const response = await fetch(
       `${API_BASE}/api/checkout/session-status?session_id=${encodeURIComponent(sessionId)}`
@@ -175,17 +254,24 @@ export default function App() {
       message: "Redirecting to Stripe Checkout..."
     });
     try {
+      const snapshot = {
+        store_id: DEFAULT_STORE_ID,
+        store_name: DEFAULT_STORE_NAME,
+        items: cartItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          image_url: item.image_url
+        }))
+      };
+      window.sessionStorage.setItem(CHECKOUT_SNAPSHOT_KEY, JSON.stringify(snapshot));
+
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image_url: item.image_url
-          }))
+          items: snapshot.items
         })
       });
       const data = await response.json();
@@ -197,6 +283,7 @@ export default function App() {
       }
       window.location.assign(data.checkout_url);
     } catch (err) {
+      window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -222,6 +309,7 @@ export default function App() {
           type: "warning",
           message: "Checkout canceled. Your cart is still saved."
         });
+        window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       }
 
       if (status === "success" && sessionId) {
@@ -232,11 +320,14 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            const snapshot = readCheckoutSnapshot();
+            persistOrder(session, snapshot);
             setCheckoutState({
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
             setCart({});
+            window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
           } else {
             setCheckoutState({
               type: "warning",
@@ -262,6 +353,17 @@ export default function App() {
     }
 
     hydrateCheckoutResult();
+  }, []);
+
+  useEffect(() => {
+    function syncOrders(event) {
+      if (event.key && event.key !== ORDERS_STORAGE_KEY) {
+        return;
+      }
+      setOrders(readOrdersStorage());
+    }
+    window.addEventListener("storage", syncOrders);
+    return () => window.removeEventListener("storage", syncOrders);
   }, []);
 
   const cartCount = useMemo(
@@ -297,12 +399,19 @@ export default function App() {
           <button className="navLink" onClick={() => setActivePage("shop")}>
             Shop
           </button>
+          <button className="navLink" onClick={() => setActivePage("orders")}>
+            Orders
+          </button>
           <button className="navLink" onClick={() => setActivePage("profile")}>
             Profile
           </button>
           <div className="cartBadge">Cart {cartCount}</div>
         </div>
       </header>
+
+      {checkoutState.message ? (
+        <p className={`status checkoutNotice ${checkoutState.type}`}>{checkoutState.message}</p>
+      ) : null}
 
       {activePage === "shop" ? (
         <>
@@ -345,9 +454,6 @@ export default function App() {
           </section>
 
           {loading && <p className="status">Loading products...</p>}
-          {checkoutState.message ? (
-            <p className={`status checkoutNotice ${checkoutState.type}`}>{checkoutState.message}</p>
-          ) : null}
           {error && <p className="error">{error}</p>}
 
           <main className="content">
@@ -397,7 +503,11 @@ export default function App() {
             </aside>
           </main>
         </>
-      ) : (
+      ) : null}
+
+      {activePage === "orders" ? <OrdersPage orders={orders} /> : null}
+
+      {activePage === "profile" ? (
         <section className="profilePage">
           <h2>Edit Profile</h2>
           <p>Save your details for faster checkout and delivery updates.</p>
@@ -502,7 +612,7 @@ export default function App() {
             </div>
           </form>
         </section>
-      )}
+      ) : null}
 
       <button
         className="profileFab"
