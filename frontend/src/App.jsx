@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import CartDrawer from "./CartDrawer";
+import CartsHub from "./CartsHub";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
 const PROFILE_AVATAR_KEY = "freshcart-profile-avatar";
 const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
+const CARTS_STORAGE_KEY = "freshcart-carts";
+const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -73,20 +78,88 @@ function storeMatchesFilter(store, filterId) {
   return (store.tags || []).includes(filterId);
 }
 
+function readJsonStorage(key, fallback) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function snapshotProduct(product) {
+  return {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    image_url: product.image_url,
+    store_id: product.store_id,
+    description: product.description || ""
+  };
+}
+
+function countItems(cartMap) {
+  return Object.values(cartMap || {}).reduce((sum, qty) => sum + (qty || 0), 0);
+}
+
+function buildCartItems(cartMap, cartCatalog, productCatalog) {
+  return Object.entries(cartMap || {})
+    .map(([productId, quantity]) => {
+      const product = cartCatalog[productId] || productCatalog[productId];
+      if (!product) {
+        return null;
+      }
+      return { ...product, quantity };
+    })
+    .filter(Boolean);
+}
+
+function pruneCartCatalog(carts, catalog) {
+  const keptIds = new Set();
+  for (const cart of Object.values(carts)) {
+    for (const productId of Object.keys(cart || {})) {
+      keptIds.add(productId);
+    }
+  }
+  const next = {};
+  for (const [productId, product] of Object.entries(catalog)) {
+    if (keptIds.has(productId)) {
+      next[productId] = product;
+    }
+  }
+  const catalogKeys = Object.keys(catalog);
+  const nextKeys = Object.keys(next);
+  if (
+    catalogKeys.length === nextKeys.length &&
+    nextKeys.every((key) => catalog[key] === next[key])
+  ) {
+    return catalog;
+  }
+  return next;
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState("stores");
   const [selectedZip, setSelectedZip] = useState(DEFAULT_ZIP);
   const [stores, setStores] = useState([]);
   const [storesLoading, setStoresLoading] = useState(false);
   const [storeFilter, setStoreFilter] = useState("all");
+  const [storeQuery, setStoreQuery] = useState("");
   const [selectedStore, setSelectedStore] = useState(null);
   const [products, setProducts] = useState([]);
   const [productCatalog, setProductCatalog] = useState({});
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [cart, setCart] = useState({});
-  const [cartStoreId, setCartStoreId] = useState("");
+  const [carts, setCarts] = useState(() => readJsonStorage(CARTS_STORAGE_KEY, {}));
+  const [cartCatalog, setCartCatalog] = useState(() =>
+    readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
+  );
+  const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
@@ -100,6 +173,84 @@ export default function App() {
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
+  const selectedZipRef = useRef(selectedZip);
+  const storesZipRef = useRef("");
+  const pendingContinueRef = useRef(null);
+  selectedZipRef.current = selectedZip;
+
+  useEffect(() => {
+    window.localStorage.setItem(CARTS_STORAGE_KEY, JSON.stringify(carts));
+  }, [carts]);
+
+  useEffect(() => {
+    setCartCatalog((catalog) => pruneCartCatalog(carts, catalog));
+  }, [carts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
+  }, [cartCatalog]);
+
+  useEffect(() => {
+    function parseStoredObject(raw) {
+      if (!raw) {
+        return {};
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function onStorage(event) {
+      if (event.storageArea !== window.localStorage) {
+        return;
+      }
+      if (event.key === ZIP_STORAGE_KEY) {
+        const nextZip = event.newValue || DEFAULT_ZIP;
+        selectedZipRef.current = nextZip;
+        setSelectedZip(nextZip);
+        loadStores(nextZip).then((result) => {
+          if (!result || result.stale) {
+            return;
+          }
+          pruneCartsToStores(result.items);
+          const selectedId = window.localStorage.getItem(STORE_STORAGE_KEY);
+          if (selectedId) {
+            const match = result.items.find((store) => store.id === selectedId);
+            if (match) {
+              setSelectedStore(match);
+              return;
+            }
+          }
+          setSelectedStore(null);
+          window.localStorage.removeItem(STORE_STORAGE_KEY);
+          setActivePage("stores");
+          pendingContinueRef.current = null;
+          setCartPanel(null);
+        });
+        return;
+      }
+      if (event.key === CARTS_STORAGE_KEY) {
+        const remoteZip = window.localStorage.getItem(ZIP_STORAGE_KEY) || DEFAULT_ZIP;
+        // Ignore cart snapshots from a tab that already moved to another zip.
+        if (remoteZip !== selectedZipRef.current) {
+          return;
+        }
+        setCarts(parseStoredObject(event.newValue));
+        return;
+      }
+      if (event.key === CART_CATALOG_STORAGE_KEY) {
+        // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
+        const remote = parseStoredObject(event.newValue);
+        setCartCatalog((prev) => ({ ...prev, ...remote }));
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadStores(zip = selectedZip) {
     const requestId = ++storesRequestIdRef.current;
@@ -121,6 +272,7 @@ export default function App() {
       const items = data.items || [];
       const resolvedZip = data.zip || zip;
       setStores(items);
+      storesZipRef.current = resolvedZip || "";
       if (resolvedZip) {
         setSelectedZip(resolvedZip);
         window.localStorage.setItem(ZIP_STORAGE_KEY, resolvedZip);
@@ -192,6 +344,7 @@ export default function App() {
       if (!result || result.stale) {
         return;
       }
+      pruneCartsToStores(result.items);
       if (storedStoreId) {
         const match = result.items.find((store) => store.id === storedStoreId);
         if (match) {
@@ -215,6 +368,34 @@ export default function App() {
   }, [selectedStore?.id, activePage]);
 
   useEffect(() => {
+    const pending = pendingContinueRef.current;
+    if (!pending?.storeId) {
+      return;
+    }
+    if (storesLoading || storesZipRef.current !== selectedZip) {
+      return;
+    }
+    if (stores.length === 0) {
+      pendingContinueRef.current = null;
+      return;
+    }
+    const match = stores.find((store) => store.id === pending.storeId);
+    if (!match) {
+      pendingContinueRef.current = null;
+      return;
+    }
+    pendingContinueRef.current = null;
+    setError("");
+    setSelectedStore(match);
+    window.localStorage.setItem(STORE_STORAGE_KEY, match.id);
+    setQuery("");
+    setDealsNotice("");
+    setProducts([]);
+    setActivePage("shop");
+    setCartPanel(pending.panel === "drawer" ? "drawer" : null);
+  }, [stores, storesLoading, selectedZip]);
+
+  useEffect(() => {
     const randomAvatar = CARTOON_AVATARS[Math.floor(Math.random() * CARTOON_AVATARS.length)];
     const storedAvatar = window.localStorage.getItem(PROFILE_AVATAR_KEY);
     const avatar = storedAvatar || randomAvatar;
@@ -236,38 +417,145 @@ export default function App() {
     }
   }, []);
 
-  const filteredStores = useMemo(
-    () => stores.filter((store) => storeMatchesFilter(store, storeFilter)),
-    [stores, storeFilter]
-  );
+  const filteredStores = useMemo(() => {
+    const needle = storeQuery.trim().toLowerCase();
+    return stores.filter((store) => {
+      if (!storeMatchesFilter(store, storeFilter)) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
+      const haystack = `${store.name} ${(store.tags || []).join(" ")}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [stores, storeFilter, storeQuery]);
 
-  const cartItems = useMemo(() => {
-    return Object.entries(cart)
-      .map(([productId, quantity]) => {
-        const product = productCatalog[productId];
-        if (!product) {
-          return null;
-        }
-        return { ...product, quantity };
-      })
-      .filter(Boolean);
-  }, [cart, productCatalog]);
+  const activeStoreId = selectedStore?.id || "";
+  const activeCart = carts[activeStoreId] || {};
+
+  const cartItems = useMemo(
+    () => buildCartItems(activeCart, cartCatalog, productCatalog),
+    [activeCart, cartCatalog, productCatalog]
+  );
 
   const cartTotal = useMemo(
     () => cartItems.reduce((sum, item) => sum + (item?.price || 0) * item.quantity, 0),
     [cartItems]
   );
 
-  const cartStoreName = useMemo(() => {
-    if (!cartStoreId) {
-      return "";
+  const cartCount = useMemo(
+    () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
+    [carts]
+  );
+
+  const hubCarts = useMemo(() => {
+    return Object.entries(carts)
+      .filter(([, cart]) => countItems(cart) > 0)
+      .map(([storeId, cart]) => {
+        const store = stores.find((entry) => entry.id === storeId);
+        const items = buildCartItems(cart, cartCatalog, productCatalog);
+        return {
+          storeId,
+          storeName: store?.name || storeId,
+          logoUrl: store?.logo_url || "",
+          etaLabel: store?.eta_label || "",
+          itemCount: countItems(cart),
+          subtotal: items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0),
+          thumbnails: items
+            .map((item) => item.image_url)
+            .filter(Boolean)
+            .slice(0, 4)
+        };
+      });
+  }, [carts, stores, cartCatalog, productCatalog]);
+
+  const otherOpenCarts = useMemo(() => {
+    return hubCarts.filter((cart) => cart.storeId !== activeStoreId);
+  }, [hubCarts, activeStoreId]);
+
+  function pruneCartsToStores(storeList) {
+    const availableIds = new Set(storeList.map((store) => store.id));
+    setCarts((prev) => {
+      const next = {};
+      for (const [storeId, cart] of Object.entries(prev)) {
+        if (availableIds.has(storeId) && countItems(cart) > 0) {
+          next[storeId] = cart;
+        }
+      }
+      return next;
+    });
+  }
+
+  function clearStoreCart(storeId) {
+    if (!storeId) {
+      return;
     }
-    if (selectedStore?.id === cartStoreId) {
-      return selectedStore.name;
+    setCarts((prev) => {
+      const next = { ...prev };
+      delete next[storeId];
+      return next;
+    });
+  }
+
+  function addToCart(product) {
+    const productId = typeof product === "string" ? product : product.id;
+    const catalogProduct =
+      typeof product === "string"
+        ? cartCatalog[product] || productCatalog[product]
+        : product;
+    if (!catalogProduct) {
+      return;
     }
-    const match = stores.find((store) => store.id === cartStoreId);
-    return match?.name || cartStoreId;
-  }, [cartStoreId, selectedStore, stores]);
+
+    const storeId = catalogProduct.store_id || selectedStore?.id || "";
+    if (!storeId) {
+      return;
+    }
+
+    const snapshot = snapshotProduct(catalogProduct);
+    setCartCatalog((prev) => ({ ...prev, [productId]: snapshot }));
+    setProductCatalog((prev) => ({ ...prev, [productId]: { ...prev[productId], ...snapshot } }));
+    setCarts((prev) => {
+      const storeCart = { ...(prev[storeId] || {}) };
+      storeCart[productId] = (storeCart[productId] || 0) + 1;
+      return { ...prev, [storeId]: storeCart };
+    });
+  }
+
+  function decreaseItem(productId, storeId = activeStoreId) {
+    if (!storeId || !productId) {
+      return;
+    }
+    setCarts((prev) => {
+      const storeCart = { ...(prev[storeId] || {}) };
+      const currentQty = storeCart[productId] || 0;
+      if (currentQty <= 1) {
+        delete storeCart[productId];
+      } else {
+        storeCart[productId] = currentQty - 1;
+      }
+      const next = { ...prev };
+      if (Object.keys(storeCart).length === 0) {
+        delete next[storeId];
+      } else {
+        next[storeId] = storeCart;
+      }
+      return next;
+    });
+  }
+
+  function quantityForProduct(product) {
+    const storeId = product.store_id || selectedStore?.id || "";
+    if (!storeId) {
+      return 0;
+    }
+    return carts[storeId]?.[product.id] || 0;
+  }
+
+  function cartCountForStore(storeId) {
+    return countItems(carts[storeId]);
+  }
 
   async function loadTodaysDeals() {
     if (!selectedStore?.id) {
@@ -305,90 +593,36 @@ export default function App() {
     setActivePage("shop");
   }
 
-  function changeStore() {
-    setError("");
-    setActivePage("stores");
-  }
-
   async function handleZipChange(zip) {
     const previousZip = selectedZip;
+    pendingContinueRef.current = null;
     setSelectedZip(zip);
     const result = await loadStores(zip);
     if (result?.stale) {
       return;
     }
     if (!result) {
-      // Fetch failed — roll back zip and reload the previous area's store list.
       setSelectedZip(previousZip);
       await loadStores(previousZip);
       return;
     }
+    pruneCartsToStores(result.items);
     const prevId = selectedStore?.id;
     if (!prevId) {
       return;
     }
     const match = result.items.find((store) => store.id === prevId);
     if (match) {
-      // Refresh ETA/distance for the new zip while keeping the same retailer.
       setSelectedStore(match);
       window.localStorage.setItem(STORE_STORAGE_KEY, match.id);
       return;
     }
     setSelectedStore(null);
     window.localStorage.removeItem(STORE_STORAGE_KEY);
-    setCart({});
-    setCartStoreId("");
     setProducts([]);
     setActivePage("stores");
+    closeCartPanel();
   }
-
-  function addToCart(product) {
-    const productId = typeof product === "string" ? product : product.id;
-    const catalogProduct = typeof product === "string" ? productCatalog[product] : product;
-    if (!catalogProduct) {
-      return;
-    }
-
-    const nextStoreId = catalogProduct.store_id || selectedStore?.id || "";
-    const cartHasItems = Object.keys(cart).length > 0;
-
-    if (cartHasItems && cartStoreId && nextStoreId && nextStoreId !== cartStoreId) {
-      const nextName = selectedStore?.id === nextStoreId ? selectedStore.name : nextStoreId;
-      const confirmed = window.confirm(
-        `Your cart has items from ${cartStoreName || "another store"}. Start a new cart with items from ${nextName}?`
-      );
-      if (!confirmed) {
-        return;
-      }
-      setCart({ [productId]: 1 });
-      setCartStoreId(nextStoreId);
-      return;
-    }
-
-    if (!cartStoreId && nextStoreId) {
-      setCartStoreId(nextStoreId);
-    }
-    setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
-  }
-
-  function decreaseItem(productId) {
-    setCart((prev) => {
-      const next = { ...prev };
-      const currentQty = next[productId] || 0;
-      if (currentQty <= 1) {
-        delete next[productId];
-      } else {
-        next[productId] = currentQty - 1;
-      }
-      return next;
-    });
-  }
-
-  useEffect(() => {
-    if (Object.keys(cart).length === 0 && cartStoreId) {
-      setCartStoreId("");
-    }
-  }, [cart, cartStoreId]);
 
   async function verifyCheckout(sessionId) {
     const response = await fetch(
@@ -402,7 +636,7 @@ export default function App() {
   }
 
   async function startCheckout() {
-    if (cartItems.length === 0) {
+    if (cartItems.length === 0 || !activeStoreId) {
       return;
     }
 
@@ -413,6 +647,7 @@ export default function App() {
       message: "Redirecting to Stripe Checkout..."
     });
     try {
+      window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -424,8 +659,8 @@ export default function App() {
             quantity: item.quantity,
             image_url: item.image_url
           })),
-          store_id: cartStoreId || selectedStore?.id || "",
-          store_name: cartStoreName || selectedStore?.name || ""
+          store_id: activeStoreId,
+          store_name: selectedStore?.name || activeStoreId
         })
       });
       const data = await response.json();
@@ -437,6 +672,7 @@ export default function App() {
       }
       window.location.assign(data.checkout_url);
     } catch (err) {
+      window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -462,6 +698,7 @@ export default function App() {
           type: "warning",
           message: "Checkout canceled. Your cart is still saved."
         });
+        window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
       }
 
       if (status === "success" && sessionId) {
@@ -476,8 +713,12 @@ export default function App() {
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
-            setCart({});
-            setCartStoreId("");
+            const checkedOutStoreId =
+              session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
+            if (checkedOutStoreId) {
+              clearStoreCart(checkedOutStoreId);
+            }
+            window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
           } else {
             setCheckoutState({
               type: "warning",
@@ -503,12 +744,9 @@ export default function App() {
     }
 
     hydrateCheckoutResult();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cartCount = useMemo(
-    () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
-    [cartItems]
-  );
   const hasConfiguredProfile = useMemo(
     () => profileSaved && Boolean(profile.fullName.trim()),
     [profileSaved, profile.fullName]
@@ -530,29 +768,88 @@ export default function App() {
     setProfileNotice("Profile saved.");
   }
 
+  function closeCartPanel() {
+    pendingContinueRef.current = null;
+    setCartPanel(null);
+  }
+
+  function openCartPanel() {
+    if (activePage === "shop" && selectedStore) {
+      setCartPanel("drawer");
+      return;
+    }
+    setCartPanel("hub");
+  }
+
+  function continueShoppingFromHub(storeId) {
+    const store = stores.find((entry) => entry.id === storeId);
+    const storesReady = !storesLoading && storesZipRef.current === selectedZip;
+    if (store && storesReady) {
+      pendingContinueRef.current = null;
+      selectStore(store);
+      closeCartPanel();
+      return;
+    }
+    if (!storesReady) {
+      pendingContinueRef.current = { storeId, panel: null };
+      return;
+    }
+    pendingContinueRef.current = null;
+    setError("");
+    setActivePage("stores");
+    closeCartPanel();
+  }
+
+  function switchDrawerCart(storeId) {
+    const store = stores.find((entry) => entry.id === storeId);
+    const storesReady = !storesLoading && storesZipRef.current === selectedZip;
+    if (store && storesReady) {
+      pendingContinueRef.current = null;
+      selectStore(store);
+      setCartPanel("drawer");
+      return;
+    }
+    if (!storesReady) {
+      pendingContinueRef.current = { storeId, panel: "drawer" };
+      return;
+    }
+    pendingContinueRef.current = null;
+    setError("");
+    setActivePage("stores");
+    setCartPanel("hub");
+  }
+
   const zipLabel = ZIP_OPTIONS.find((option) => option.value === selectedZip)?.label || selectedZip;
+  const zipDisplay = selectedZip;
 
   return (
     <div className="page">
       <header className="topNav">
-        <div className="brand">FreshCart</div>
+        <button
+          type="button"
+          className="brand"
+          onClick={() => {
+            setError("");
+            setActivePage("stores");
+            closeCartPanel();
+          }}
+        >
+          FreshCart
+        </button>
         <div className="rightNav">
-          <button className="navLink" onClick={() => { setError(""); setActivePage("stores"); }}>
-            Stores
-          </button>
           <button
             className="navLink"
             onClick={() => {
               setError("");
-              setActivePage(selectedStore ? "shop" : "stores");
+              setActivePage("profile");
+              closeCartPanel();
             }}
           >
-            Shop
-          </button>
-          <button className="navLink" onClick={() => { setError(""); setActivePage("profile"); }}>
             Profile
           </button>
-          <div className="cartBadge">Cart {cartCount}</div>
+          <button type="button" className="cartBadge" onClick={openCartPanel}>
+            Cart {cartCount}
+          </button>
         </div>
       </header>
 
@@ -587,6 +884,16 @@ export default function App() {
             </label>
           </header>
 
+          <section className="searchBar storesSearchBar">
+            <input
+              type="text"
+              value={storeQuery}
+              placeholder="Search stores..."
+              onChange={(event) => setStoreQuery(event.target.value)}
+              aria-label="Search stores"
+            />
+          </section>
+
           <section className="chips">
             {STORE_FILTERS.map((filter) => (
               <button
@@ -603,33 +910,41 @@ export default function App() {
           {error && <p className="error">{error}</p>}
 
           <section className="storesGrid">
-            {filteredStores.map((store) => (
-              <button
-                key={store.id}
-                type="button"
-                className="storeCard"
-                onClick={() => selectStore(store)}
-              >
-                <img src={store.logo_url} alt="" className="storeLogo" />
-                <div className="storeCardBody">
-                  <h3>{store.name}</h3>
-                  <p className="storeMeta">
-                    {store.eta_label}
-                    {typeof store.distance_mi === "number" ? ` · ${store.distance_mi} mi` : ""}
-                  </p>
-                  <div className="storeTags">
-                    {(store.tags || []).map((tag) => (
-                      <span key={tag} className="storeTag">
-                        {tag}
-                      </span>
-                    ))}
+            {filteredStores.map((store) => {
+              const inCart = cartCountForStore(store.id);
+              return (
+                <button
+                  key={store.id}
+                  type="button"
+                  className="storeCard"
+                  onClick={() => selectStore(store)}
+                >
+                  <img src={store.logo_url} alt="" className="storeLogo" />
+                  <div className="storeCardBody">
+                    <div className="storeCardTitleRow">
+                      <h3>{store.name}</h3>
+                      {inCart > 0 ? <span className="storeInCartBadge">{inCart} in cart</span> : null}
+                    </div>
+                    <p className="storeMeta">
+                      {store.eta_label}
+                      {typeof store.distance_mi === "number" ? ` · ${store.distance_mi} mi` : ""}
+                    </p>
+                    <div className="storeTags">
+                      {(store.tags || []).map((tag) => (
+                        <span key={tag} className="storeTag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </section>
           {!storesLoading && filteredStores.length === 0 ? (
-            <p className="status">No stores match this filter for {selectedZip}.</p>
+            <p className="status">
+              No stores match{storeQuery.trim() ? " your search" : " this filter"} for {selectedZip}.
+            </p>
           ) : null}
         </>
       ) : null}
@@ -639,6 +954,8 @@ export default function App() {
           <section className="hero">
             <h1>Groceries from {selectedStore.name}</h1>
             <p>
+              {selectedStore.supports_pickup ? "Delivery or Pickup" : "Delivery"}
+              {" · "}
               {selectedStore.eta_label}
               {typeof selectedStore.distance_mi === "number"
                 ? ` · ${selectedStore.distance_mi} mi away`
@@ -647,9 +964,6 @@ export default function App() {
             <div className="heroActions">
               <button className="dealsBtn" onClick={loadTodaysDeals} disabled={dealsLoading}>
                 {dealsLoading ? "Loading deals..." : "Today's Deals"}
-              </button>
-              <button className="changeStoreBtn" onClick={changeStore}>
-                Change store
               </button>
             </div>
             {dealsNotice ? <p className="status">{dealsNotice}</p> : null}
@@ -691,52 +1005,46 @@ export default function App() {
           {loading && <p className="status">Loading products...</p>}
           {error && <p className="error">{error}</p>}
 
-          <main className="content">
+          <main className="content contentFull">
             <section className="productsGrid">
-              {products.map((product) => (
-                <article className="card" key={product.id}>
-                  <img src={product.image_url} alt={product.name} />
-                  <h3>{product.name}</h3>
-                  <p>{product.description}</p>
-                  <div className="row">
-                    <strong>{currency(product.price)}</strong>
-                    <button className="addBtn" onClick={() => addToCart(product)}>
-                      Add
-                    </button>
-                  </div>
-                  <small className="source">{product.store_id}</small>
-                </article>
-              ))}
-            </section>
-
-            <aside className="cart">
-              <h2>Cart</h2>
-              {cartStoreName ? <p className="cartStoreLabel">{cartStoreName}</p> : null}
-              {cartItems.length === 0 ? (
-                <p>No items yet.</p>
-              ) : (
-                <>
-                  {cartItems.map((item) => (
-                    <div className="cartItem" key={item.id}>
-                      <span>{item.name}</span>
-                      <div className="qtyControls">
-                        <button onClick={() => decreaseItem(item.id)}>-</button>
-                        <span>{item.quantity}</span>
-                        <button onClick={() => addToCart(item)}>+</button>
-                      </div>
+              {products.map((product) => {
+                const qty = quantityForProduct(product);
+                return (
+                  <article className="card" key={product.id}>
+                    <img src={product.image_url} alt={product.name} />
+                    <h3>{product.name}</h3>
+                    <p>{product.description}</p>
+                    <div className="row">
+                      <strong>{currency(product.price)}</strong>
+                      {qty > 0 ? (
+                        <div className="qtyControls productQtyControls">
+                          <button
+                            type="button"
+                            onClick={() => decreaseItem(product.id, product.store_id)}
+                            aria-label={qty <= 1 ? `Remove ${product.name}` : `Decrease ${product.name}`}
+                          >
+                            {qty <= 1 ? "×" : "−"}
+                          </button>
+                          <span>{qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => addToCart(product)}
+                            aria-label={`Increase ${product.name}`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="addBtn" onClick={() => addToCart(product)}>
+                          Add
+                        </button>
+                      )}
                     </div>
-                  ))}
-                  <div className="cartTotal">Total: {currency(cartTotal)}</div>
-                  <button
-                    className="checkoutBtn"
-                    onClick={startCheckout}
-                    disabled={checkoutLoading || cartItems.length === 0}
-                  >
-                    {checkoutLoading ? "Starting checkout..." : "Checkout"}
-                  </button>
-                </>
-              )}
-            </aside>
+                    <small className="source">{product.store_id}</small>
+                  </article>
+                );
+              })}
+            </section>
           </main>
         </>
       ) : null}
@@ -856,6 +1164,38 @@ export default function App() {
             </div>
           </form>
         </section>
+      ) : null}
+
+      {cartPanel === "hub" ? (
+        <CartsHub
+          zip={zipDisplay}
+          carts={hubCarts}
+          onClose={closeCartPanel}
+          onContinueShopping={continueShoppingFromHub}
+          onDeleteCart={clearStoreCart}
+          onBrowseStores={() => {
+            closeCartPanel();
+            setActivePage("stores");
+          }}
+        />
+      ) : null}
+
+      {cartPanel === "drawer" && selectedStore ? (
+        <CartDrawer
+          zip={zipDisplay}
+          storeName={selectedStore.name}
+          etaLabel={selectedStore.eta_label}
+          supportsPickup={Boolean(selectedStore.supports_pickup)}
+          items={cartItems}
+          subtotal={cartTotal}
+          otherCarts={otherOpenCarts}
+          checkoutLoading={checkoutLoading}
+          onClose={closeCartPanel}
+          onIncrease={addToCart}
+          onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onCheckout={startCheckout}
+          onSwitchCart={switchDrawerCart}
+        />
       ) : null}
 
       <button

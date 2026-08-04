@@ -8,22 +8,32 @@ paths:
   - "backend/requirements.txt"
   - "frontend/src/App.jsx"
   - "frontend/src/App.css"
+  - "frontend/src/CartDrawer.jsx"
+  - "frontend/src/CartsHub.jsx"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
 focus_prompt: |
-  Probe the cart and Stripe Checkout flow for bugs. Cover:
-  - Adding multiple distinct items to the cart and incrementing quantities.
-  - Verifying the cart total matches `sum(price * quantity)` for the items shown.
+  Probe the multi-store cart and Stripe Checkout flow for bugs. Cover:
+  - Adding items from two different stores without a confirm-replace dialog;
+    both carts should coexist. Header badge shows the aggregate count.
+  - On Stores, the cart badge opens the Carts hub; on Shop, it opens the
+    store cart drawer (right slide-over). Checkout lives in the drawer,
+    not a sticky sidebar.
+  - Product cards show inline qty controls after the first add.
+  - Adding multiple distinct items to one store cart and incrementing quantities.
+  - Verifying the drawer subtotal matches `sum(price * quantity)` for the items shown.
   - Running a full Stripe test-mode checkout using card 4242 4242 4242 4242,
     any future date, and any 3-digit CVC. Compare the Stripe-side total to the
     in-app cart total exactly (e.g., 2 bananas at $3.49 must charge $6.98, not
     $3.49 or $6.97).
   - After redirect back to the app, the success notice MUST only show when the
     backend session-status endpoint reports `payment_status === "paid"`. If the
-    notice appears under any other payment_status, file a bug.
+    notice appears under any other payment_status, file a bug. Only the
+    checked-out store's cart should clear; other store carts remain.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave
-    the cart cleanly), reloading mid-checkout, returning with `?checkout=cancel`,
-    and clicking Checkout while the cart is empty (button must be disabled).
+    the cart cleanly), reloading mid-checkout (carts persist via localStorage),
+    returning with `?checkout=cancel`, and clicking Checkout while the cart is
+    empty (button must be disabled).
 max_turns: 60
