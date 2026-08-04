@@ -784,6 +784,17 @@ export default function App() {
       if (!response.ok) {
         throw new Error(data.detail || "Unable to check that URL.");
       }
+      if (
+        !data ||
+        typeof data !== "object" ||
+        !Number.isInteger(data.status_code) ||
+        data.status_code < 100 ||
+        data.status_code > 599 ||
+        !Number.isInteger(data.content_length) ||
+        data.content_length < 0
+      ) {
+        throw new Error("The price-check service returned an invalid response.");
+      }
       setComparisonResult(data);
     } catch (err) {
       setComparisonError(err.message || "Unable to check that URL.");
