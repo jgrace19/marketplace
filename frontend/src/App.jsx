@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage, { isOrderInProgress } from "./OrdersPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +11,8 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const CHECKOUT_SNAPSHOT_KEY = "freshcart-checkout-snapshot";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -142,6 +145,72 @@ function pruneCartCatalog(carts, catalog) {
   return next;
 }
 
+function normalizeOrders(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (order) => order && typeof order === "object" && typeof order.sessionId === "string"
+  );
+}
+
+function readOrdersStorage() {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    return normalizeOrders(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function readCheckoutSnapshot() {
+  try {
+    const raw = window.sessionStorage.getItem(CHECKOUT_SNAPSHOT_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function buildOrderRecord(sessionId, session, snapshot) {
+  const items = Array.isArray(snapshot?.items)
+    ? snapshot.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price) || 0,
+        quantity: Number(item.quantity) || 0,
+        image_url: item.image_url || ""
+      }))
+    : [];
+  const snapshotTotal = Number(snapshot?.total);
+  const stripeTotal =
+    typeof session?.amount_total === "number" ? session.amount_total / 100 : NaN;
+  const total = Number.isFinite(snapshotTotal)
+    ? snapshotTotal
+    : Number.isFinite(stripeTotal)
+      ? stripeTotal
+      : items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  return {
+    sessionId,
+    storeId: session?.store_id || snapshot?.storeId || "",
+    storeName: session?.store_name || snapshot?.storeName || "Store",
+    items,
+    total,
+    createdAt: new Date().toISOString()
+  };
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState("stores");
   const [selectedZip, setSelectedZip] = useState(DEFAULT_ZIP);
@@ -171,6 +240,9 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => readOrdersStorage());
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [ordersNow, setOrdersNow] = useState(() => Date.now());
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +261,24 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    if (!orders.some((order) => isOrderInProgress(order.createdAt, Date.now()))) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      const now = Date.now();
+      setOrdersNow(now);
+      if (!orders.some((order) => isOrderInProgress(order.createdAt, now))) {
+        window.clearInterval(timerId);
+      }
+    }, 1000);
+    return () => window.clearInterval(timerId);
+  }, [orders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -646,21 +736,31 @@ export default function App() {
       type: "info",
       message: "Redirecting to Stripe Checkout..."
     });
+    const checkoutItems = cartItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      image_url: item.image_url
+    }));
+    const storeName = selectedStore?.name || activeStoreId;
+    const snapshot = {
+      storeId: activeStoreId,
+      storeName,
+      items: checkoutItems,
+      total: checkoutItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    };
+
     try {
       window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
+      window.sessionStorage.setItem(CHECKOUT_SNAPSHOT_KEY, JSON.stringify(snapshot));
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image_url: item.image_url
-          })),
+          items: checkoutItems,
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: storeName
         })
       });
       const data = await response.json();
@@ -673,6 +773,7 @@ export default function App() {
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -681,6 +782,20 @@ export default function App() {
     } finally {
       setCheckoutLoading(false);
     }
+  }
+
+  function recordPaidOrder(sessionId, session) {
+    const snapshot = readCheckoutSnapshot();
+    const order = buildOrderRecord(sessionId, session, snapshot);
+    setOrders((prev) => {
+      if (prev.some((entry) => entry.sessionId === sessionId)) {
+        return prev;
+      }
+      return [order, ...prev];
+    });
+    setOrdersNow(Date.now());
+    setSelectedOrderId(sessionId);
+    setActivePage("orders");
   }
 
   useEffect(() => {
@@ -699,6 +814,7 @@ export default function App() {
           message: "Checkout canceled. Your cart is still saved."
         });
         window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+        window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       }
 
       if (status === "success" && sessionId) {
@@ -713,12 +829,14 @@ export default function App() {
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
+            recordPaidOrder(sessionId, session);
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
             if (checkedOutStoreId) {
               clearStoreCart(checkedOutStoreId);
             }
             window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+            window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
           } else {
             setCheckoutState({
               type: "warning",
@@ -837,6 +955,17 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setSelectedOrderId(null);
+              setActivePage("orders");
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1057,6 +1186,20 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orders}
+          selectedOrderId={selectedOrderId}
+          now={ordersNow}
+          onSelectOrder={setSelectedOrderId}
+          onBackToList={() => setSelectedOrderId(null)}
+          onBackHome={() => {
+            setSelectedOrderId(null);
+            setActivePage("stores");
+          }}
+        />
       ) : null}
 
       {activePage === "profile" ? (
