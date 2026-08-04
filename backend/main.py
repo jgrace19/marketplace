@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+from decimal import Decimal, ROUND_HALF_UP
 import os
 from typing import List, Optional
 import re
@@ -41,6 +42,29 @@ class Product:
     image_url: str
     source: str
     store_id: str = ""
+
+
+@dataclass(frozen=True)
+class PromoDefinition:
+    discount_type: str
+    value: int
+    minimum_subtotal_cents: int = 0
+    expired: bool = False
+
+
+PROMO_CODES = {
+    "FRESH10": PromoDefinition(discount_type="percent", value=10),
+    "SAVE5": PromoDefinition(
+        discount_type="fixed",
+        value=500,
+        minimum_subtotal_cents=2500,
+    ),
+    "FRESH20EXPIRED": PromoDefinition(
+        discount_type="percent",
+        value=20,
+        expired=True,
+    ),
+}
 
 
 def _product_from_dict(item: dict) -> Product:
@@ -85,6 +109,61 @@ def _require_store(store_id: str) -> str:
     return cleaned
 
 
+def _money_to_cents(value: float) -> int:
+    return int(
+        (Decimal(str(value)) * Decimal("100")).quantize(
+            Decimal("1"),
+            rounding=ROUND_HALF_UP,
+        )
+    )
+
+
+def _promo_error(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={"code": code, "message": message},
+    )
+
+
+def validate_promo_code(code: str, subtotal_cents: int) -> dict:
+    normalized_code = (code or "").strip().upper()
+    promo = PROMO_CODES.get(normalized_code)
+    if promo is None:
+        raise _promo_error("invalid_promo_code", "That promo code is not valid.")
+    if promo.expired:
+        raise _promo_error("expired_promo_code", "That promo code has expired.")
+    if subtotal_cents < promo.minimum_subtotal_cents:
+        minimum = promo.minimum_subtotal_cents / 100
+        raise _promo_error(
+            "minimum_subtotal_not_met",
+            f"{normalized_code} requires a subtotal of at least ${minimum:.2f}.",
+        )
+
+    if promo.discount_type == "percent":
+        discount_cents = int(
+            (Decimal(subtotal_cents) * Decimal(promo.value) / Decimal("100")).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+        description = f"{promo.value}% off"
+    else:
+        discount_cents = promo.value
+        description = f"${promo.value / 100:.2f} off"
+
+    discount_cents = min(discount_cents, subtotal_cents)
+    return {
+        "code": normalized_code,
+        "description": description,
+        "discount_type": promo.discount_type,
+        "discount_value": promo.value,
+        "minimum_subtotal": promo.minimum_subtotal_cents / 100,
+        "subtotal": subtotal_cents / 100,
+        "discount_amount": discount_cents / 100,
+        "total": (subtotal_cents - discount_cents) / 100,
+    }
+
+
 class CheckoutItem(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
@@ -97,6 +176,7 @@ class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    promo_code: Optional[str] = Field(default=None, max_length=40)
 
 
 def configure_stripe() -> None:
@@ -162,33 +242,114 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
     }
 
 
+@app.get("/api/promo/validate")
+def validate_promo(
+    code: str = Query(min_length=1, max_length=40),
+    subtotal: float = Query(default=0, ge=0),
+) -> dict:
+    return validate_promo_code(code, _money_to_cents(subtotal))
+
+
+def _stripe_product_data(item: CheckoutItem) -> dict:
+    product_data = {"name": item.name}
+    if item.image_url:
+        product_data["images"] = [item.image_url]
+    return product_data
+
+
+def _build_discounted_line_items(
+    items: List[CheckoutItem],
+    unit_amounts: List[int],
+    target_total_cents: int,
+) -> list:
+    line_totals = [
+        unit_amount * item.quantity
+        for item, unit_amount in zip(items, unit_amounts)
+    ]
+    subtotal_cents = sum(line_totals)
+    allocations = [
+        (target_total_cents * line_total) // subtotal_cents
+        for line_total in line_totals
+    ]
+    remainder_order = sorted(
+        range(len(items)),
+        key=lambda index: (target_total_cents * line_totals[index]) % subtotal_cents,
+        reverse=True,
+    )
+    for index in remainder_order[: target_total_cents - sum(allocations)]:
+        allocations[index] += 1
+
+    line_items = []
+    for item, allocated_total in zip(items, allocations):
+        lower_unit_amount, higher_unit_count = divmod(
+            allocated_total,
+            item.quantity,
+        )
+        lower_unit_count = item.quantity - higher_unit_count
+        product_data = _stripe_product_data(item)
+        if higher_unit_count:
+            line_items.append(
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": product_data,
+                        "unit_amount": lower_unit_amount + 1,
+                    },
+                    "quantity": higher_unit_count,
+                }
+            )
+        if lower_unit_count:
+            line_items.append(
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": product_data,
+                        "unit_amount": lower_unit_amount,
+                    },
+                    "quantity": lower_unit_count,
+                }
+            )
+    return line_items
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
-    configure_stripe()
-    line_items = []
-
+    unit_amounts = []
     for item in payload.items:
-        unit_amount = int(round(item.price * 100))
+        unit_amount = _money_to_cents(item.price)
         if unit_amount <= 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid price for item '{item.name}'.",
             )
+        unit_amounts.append(unit_amount)
 
-        product_data = {"name": item.name}
-        if item.image_url:
-            product_data["images"] = [item.image_url]
-
-        line_items.append(
+    subtotal_cents = sum(
+        unit_amount * item.quantity
+        for item, unit_amount in zip(payload.items, unit_amounts)
+    )
+    promo = None
+    if payload.promo_code:
+        promo = validate_promo_code(payload.promo_code, subtotal_cents)
+        line_items = _build_discounted_line_items(
+            payload.items,
+            unit_amounts,
+            _money_to_cents(promo["total"]),
+        )
+    else:
+        line_items = [
             {
                 "price_data": {
                     "currency": "usd",
-                    "product_data": product_data,
+                    "product_data": _stripe_product_data(item),
                     "unit_amount": unit_amount,
                 },
                 "quantity": item.quantity,
             }
-        )
+            for item, unit_amount in zip(payload.items, unit_amounts)
+        ]
+
+    configure_stripe()
 
     session_kwargs = {
         "mode": "payment",
@@ -201,6 +362,9 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
+    if promo:
+        metadata["promo_code"] = promo["code"]
+        metadata["discount_amount"] = f"{promo['discount_amount']:.2f}"
     if metadata:
         session_kwargs["metadata"] = metadata
 

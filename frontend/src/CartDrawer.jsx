@@ -12,11 +12,19 @@ export default function CartDrawer({
   supportsPickup,
   items,
   subtotal,
+  discount,
+  total,
+  promoInput,
+  appliedPromo,
+  promoError,
+  promoLoading,
   otherCarts,
   checkoutLoading,
   onClose,
   onIncrease,
   onDecrease,
+  onPromoInputChange,
+  onApplyPromo,
   onCheckout,
   onSwitchCart
 }) {
@@ -88,14 +96,63 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
-          <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
+          <form
+            className="promoForm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onApplyPromo();
+            }}
+          >
+            <label htmlFor="promo-code">Promo code</label>
+            <div className="promoControls">
+              <input
+                id="promo-code"
+                value={promoInput}
+                onChange={(event) => onPromoInputChange(event.target.value)}
+                placeholder="Enter code"
+                autoComplete="off"
+              />
+              <button
+                type="submit"
+                disabled={promoLoading || items.length === 0}
+              >
+                {promoLoading ? "Applying..." : "Apply"}
+              </button>
+            </div>
+            {promoError ? (
+              <p className="promoError" role="alert">
+                {promoError}
+              </p>
+            ) : null}
+            {appliedPromo ? (
+              <p className="promoSuccess" role="status">
+                {appliedPromo.code} applied · {appliedPromo.description}
+              </p>
+            ) : null}
+          </form>
+          <div className="cartSummary">
+            <div>
+              <span>Subtotal</span>
+              <span>{currency(subtotal)}</span>
+            </div>
+            {discount > 0 ? (
+              <div className="cartDiscount">
+                <span>Discount</span>
+                <span>−{currency(discount)}</span>
+              </div>
+            ) : null}
+            <div className="cartTotal">
+              <span>Total</span>
+              <span>{currency(total)}</span>
+            </div>
+          </div>
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
             disabled={checkoutLoading || items.length === 0}
           >
-            {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
+            {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(total)}`}
           </button>
         </footer>
       </aside>

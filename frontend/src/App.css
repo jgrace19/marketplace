@@ -390,13 +390,6 @@ body {
   color: #108910;
 }
 
-.cartTotal {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #ebeeea;
-  font-weight: 600;
-}
-
 .cartOverlay {
   position: fixed;
   inset: 0;
@@ -616,6 +609,89 @@ body {
   position: sticky;
   bottom: 0;
   background: #fff;
+}
+
+.promoForm {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.promoForm label {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.promoControls {
+  display: flex;
+  gap: 8px;
+}
+
+.promoControls input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #d2d6d0;
+  border-radius: 10px;
+  padding: 10px 11px;
+  font: inherit;
+  text-transform: uppercase;
+}
+
+.promoControls button {
+  border: none;
+  border-radius: 10px;
+  background: #1f1f1f;
+  color: #fff;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.promoControls button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.promoError,
+.promoSuccess {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.promoError {
+  color: #a80000;
+}
+
+.promoSuccess {
+  color: #176a2d;
+  font-weight: 600;
+}
+
+.cartSummary {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #ebeeea;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.9rem;
+}
+
+.cartSummary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cartDiscount {
+  color: #176a2d;
+}
+
+.cartTotal {
+  padding-top: 7px;
+  border-top: 1px solid #ebeeea;
+  font-weight: 700;
+  font-size: 1rem;
 }
 
 .checkoutBtn {
