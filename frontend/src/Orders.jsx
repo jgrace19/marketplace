@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 export const ORDER_STAGES = ["Placed", "Shopping", "On the way", "Delivered"];
-export const STAGE_DURATION_MS = 5000;
+export const STAGE_DURATION_MS = 10000;
 
 function currency(value) {
   return new Intl.NumberFormat("en-US", {
