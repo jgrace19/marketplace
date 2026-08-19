@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import Orders from "./Orders";
+import {
+  ORDERS_STORAGE_KEY,
+  PENDING_CHECKOUT_KEY,
+  appendOrderIfNew,
+  buildOrderRecord,
+  clearPendingCheckout,
+  readJsonStorage,
+  readPendingCheckout,
+  snapshotCartItems
+} from "./orders";
 
 const API_BASE = "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -62,6 +73,7 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => readJsonStorage(ORDERS_STORAGE_KEY, []));
 
   async function loadProducts(search = "") {
     setLoading(true);
@@ -95,6 +107,10 @@ export default function App() {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
 
   useEffect(() => {
     const randomAvatar = CARTOON_AVATARS[Math.floor(Math.random() * CARTOON_AVATARS.length)];
@@ -195,6 +211,15 @@ export default function App() {
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
       }
+      window.sessionStorage.setItem(
+        PENDING_CHECKOUT_KEY,
+        JSON.stringify({
+          sessionId: data.session_id,
+          storeId: "freshcart",
+          storeName: "FreshCart",
+          items: snapshotCartItems(cartItems)
+        })
+      );
       window.location.assign(data.checkout_url);
     } catch (err) {
       setError(err.message || "Unable to start checkout.");
@@ -236,6 +261,9 @@ export default function App() {
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
+            const order = buildOrderRecord(session, readPendingCheckout(session.session_id), cartItems);
+            setOrders(appendOrderIfNew(order));
+            clearPendingCheckout();
             setCart({});
           } else {
             setCheckoutState({
@@ -299,6 +327,9 @@ export default function App() {
           </button>
           <button className="navLink" onClick={() => setActivePage("profile")}>
             Profile
+          </button>
+          <button className="navLink" onClick={() => setActivePage("orders")}>
+            Orders
           </button>
           <div className="cartBadge">Cart {cartCount}</div>
         </div>
@@ -397,6 +428,8 @@ export default function App() {
             </aside>
           </main>
         </>
+      ) : activePage === "orders" ? (
+        <Orders orders={orders} />
       ) : (
         <section className="profilePage">
           <h2>Edit Profile</h2>

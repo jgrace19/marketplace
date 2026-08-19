@@ -1,0 +1,22 @@
+id: orders-tracker
+description: |
+  Order history and live status tracker. Should run if the diff touches order
+  persistence, the Orders page, status stepper UI, or checkout order snapshots.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/Orders.jsx"
+  - "frontend/src/orders.js"
+  - "frontend/package.json"
+focus_prompt: |
+  Probe the Orders page and live status tracker for bugs. Cover:
+  - Open Orders via the header nav after completing a paid checkout. A new order
+    must appear with status "Placed".
+  - Without reloading, wait for the simulated timer and confirm the stepper
+    progresses through Shopping, On the way, and Delivered.
+  - Reload the page on the Orders list and on an order detail view. History and
+    the current stage must persist (derived from placedAt).
+  - Open an order detail view and confirm line items and quantities match what
+    was purchased at checkout.
+  - Edge case: navigating back from detail to the list preserves the order list.
+max_turns: 60
