@@ -1,0 +1,44 @@
+{
+  "findings": [
+    {
+      "id": "stripe-line-items-ignore-cart-quantity",
+      "area": "cart-checkout",
+      "severity": "critical",
+      "confidence": "high",
+      "description": "Stripe Checkout charges one unit per line item while the in-app cart total uses each item’s cart quantity, so paid amounts diverge from the displayed cart total.",
+      "reproSteps": [
+        "Start backend and frontend, open the shop at http://127.0.0.1:5173/.",
+        "Add two units of Organic Bananas ($3.49 each) and confirm the cart shows Total $6.98.",
+        "Click Checkout and read the total on the Stripe hosted checkout page, or POST /api/checkout/session with quantity 2 and GET /api/checkout/session-status for amount_total."
+      ],
+      "observedBehavior": "In-app total is $6.98 for two bananas, but Stripe shows $3.49 (and session-status reports amount_total 349 cents). With multiple lines, Stripe total equals the sum of unit prices once each (e.g. cart $18.96 for 2×bananas and 2×avocados becomes $9.48 on Stripe).",
+      "expectedBehavior": "Stripe total must equal the cart total (e.g. two bananas at $3.49 must charge $6.98 / 698 cents), with line item quantities matching the cart.",
+      "consoleErrors": [
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED (Unsplash product image URLs)"
+      ],
+      "domHints": [
+        "aside.cart",
+        "div.cartTotal",
+        "button.checkoutBtn"
+      ]
+    },
+    {
+      "id": "empty-cart-checkout-button-not-disabled",
+      "area": "cart-checkout",
+      "severity": "minor",
+      "confidence": "high",
+      "description": "When the cart is empty there is no Checkout control with a disabled state—the button is omitted instead.",
+      "reproSteps": [
+        "Open http://127.0.0.1:5173/ with an empty cart.",
+        "Inspect the cart aside for a Checkout action."
+      ],
+      "observedBehavior": "With zero items the cart shows “No items yet.” and no Checkout button is rendered.",
+      "expectedBehavior": "Per QA criteria the Checkout control should remain present and disabled when the cart is empty.",
+      "consoleErrors": [],
+      "domHints": [
+        "aside.cart",
+        "button.checkoutBtn"
+      ]
+    }
+  ]
+}
