@@ -380,6 +380,175 @@ body {
   z-index: 20;
 }
 
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e2e6e0;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.ordersPage h2 {
+  margin: 0 0 8px;
+}
+
+.ordersPage p {
+  margin: 0 0 16px;
+  color: #4f4f4f;
+}
+
+.ordersEmpty {
+  padding: 12px 0;
+}
+
+.ordersList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orderCard {
+  width: 100%;
+  border: 1px solid #e2e6e0;
+  border-radius: 12px;
+  background: #f6f7f5;
+  padding: 14px 16px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font: inherit;
+}
+
+.orderCard:hover {
+  border-color: #108910;
+}
+
+.orderCardMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderCardMain span {
+  color: #4f4f4f;
+  font-size: 0.9rem;
+}
+
+.orderCardMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.orderStatusPill {
+  background: #e8f8ec;
+  color: #176a2d;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.orderBackBtn {
+  margin-bottom: 12px;
+}
+
+.orderMeta {
+  color: #4f4f4f;
+}
+
+.orderStatusLine {
+  margin-bottom: 18px;
+}
+
+.orderItemsHeading {
+  margin: 20px 0 10px;
+  font-size: 1rem;
+}
+
+.orderItemsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e2e6e0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.orderItemRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e6e0;
+}
+
+.orderItemRow:last-child {
+  border-bottom: none;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.orderStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  position: relative;
+}
+
+.orderStepMarker {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 2px solid #cfd5cf;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.orderStepLabel {
+  font-size: 0.78rem;
+  color: #4f4f4f;
+}
+
+.orderStep.complete .orderStepMarker {
+  border-color: #108910;
+  background: #108910;
+  color: #fff;
+}
+
+.orderStep.complete .orderStepLabel {
+  color: #176a2d;
+  font-weight: 600;
+}
+
+.orderStep.current .orderStepMarker {
+  border-color: #108910;
+  color: #108910;
+}
+
+.orderStep.current .orderStepLabel {
+  color: #108910;
+  font-weight: 700;
+}
+
 @media (max-width: 980px) {
   .content {
     grid-template-columns: 1fr;
@@ -389,5 +558,9 @@ body {
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
+  }
+
+  .orderStepper {
+    grid-template-columns: 1fr 1fr;
   }
 }

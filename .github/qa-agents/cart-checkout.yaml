@@ -1,0 +1,27 @@
+id: cart-checkout
+description: |
+  Cart and Stripe Checkout flow. Should run if the diff touches Stripe checkout
+  session creation, cart UI/state, payment verification, the post-redirect
+  success/cancel flow, or shared product rendering used by the cart.
+paths:
+  - "backend/main.py"
+  - "backend/requirements.txt"
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/orders.js"
+  - "frontend/index.html"
+  - "frontend/package.json"
+  - ".env"
+focus_prompt: |
+  Probe the cart and Stripe Checkout flow for bugs. Cover:
+  - Adding multiple distinct items to the cart and incrementing quantities.
+  - Verifying the cart subtotal matches sum(price * quantity) for the items shown.
+  - Running a full Stripe test-mode checkout using card 4242 4242 4242 4242,
+    any future date, and any 3-digit CVC.
+  - After redirect back to the app, the success notice MUST only show when the
+    backend session-status endpoint reports payment_status === "paid".
+  - After a paid checkout, exactly one order record must exist in freshcart-orders
+    for that session_id. Reloading the page must not duplicate the order.
+  - Edge cases: returning with ?checkout=cancel, and clicking Checkout while the
+    cart is empty (button must be disabled).
+max_turns: 60
