@@ -23,10 +23,15 @@ focus_prompt: |
   - Product cards show inline qty controls after the first add.
   - Adding multiple distinct items to one store cart and incrementing quantities.
   - Verifying the drawer subtotal matches `sum(price * quantity)` for the items shown.
+  - Applying `FRESH10` in the cart drawer; the discount line and total should
+    show a 10% reduction. `SAVE5` should remove $5 only when subtotal is at
+    least $25.
+  - Applying an unknown code and `FRESH20EXPIRED`; each should show its inline
+    error without changing any currently applied discount or displayed total.
   - Running a full Stripe test-mode checkout using card 4242 4242 4242 4242,
     any future date, and any 3-digit CVC. Compare the Stripe-side total to the
-    in-app cart total exactly (e.g., 2 bananas at $3.49 must charge $6.98, not
-    $3.49 or $6.97).
+    in-app discounted total exactly, including cent rounding (e.g., 2 bananas
+    at $3.49 with `FRESH10` must charge $6.28).
   - After redirect back to the app, the success notice MUST only show when the
     backend session-status endpoint reports `payment_status === "paid"`. If the
     notice appears under any other payment_status, file a bug. Only the
