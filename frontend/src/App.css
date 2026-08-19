@@ -930,6 +930,10 @@ body {
   box-shadow: 0 0 0 4px #e8f8ec;
 }
 
+.orderStepperStep--current:last-child .orderStepperDot {
+  background: #108910;
+}
+
 .orderStepperLabel {
   font-size: 0.78rem;
   font-weight: 600;

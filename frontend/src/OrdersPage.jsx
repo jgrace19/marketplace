@@ -6,7 +6,7 @@ function currency(value) {
 }
 
 export const ORDER_STAGES = ["Placed", "Shopping", "On the way", "Delivered"];
-export const STAGE_DURATION_MS = 5000;
+export const STAGE_DURATION_MS = 10000;
 
 export function orderStageIndex(placedAt, now = Date.now()) {
   const elapsed = Math.max(0, now - Number(placedAt || 0));
