@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage, {
+  ORDER_STAGES,
+  orderStageIndex
+} from "./OrdersPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +14,8 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const CHECKOUT_SNAPSHOT_KEY = "freshcart-checkout-snapshot";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -91,6 +97,47 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+function readOrdersStorage() {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeOrderItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .filter((item) => item && item.name && Number(item.quantity) > 0)
+    .map((item) => ({
+      id: String(item.id || item.name),
+      name: String(item.name),
+      price: Number(item.price) || 0,
+      quantity: Number(item.quantity) || 0,
+      image_url: item.image_url || ""
+    }));
+}
+
+function readCheckoutSnapshot() {
+  try {
+    const raw = window.sessionStorage.getItem(CHECKOUT_SNAPSHOT_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function snapshotProduct(product) {
   return {
     id: product.id,
@@ -167,6 +214,9 @@ export default function App() {
     type: "idle",
     message: ""
   });
+  const [orders, setOrders] = useState(() => readOrdersStorage());
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [profile, setProfile] = useState(createEmptyProfile());
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
@@ -189,6 +239,23 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    const inProgress = orders.some(
+      (order) => orderStageIndex(order.placedAt, Date.now()) < ORDER_STAGES.length - 1
+    );
+    if (!inProgress) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timerId);
+  }, [orders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +312,15 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === ORDERS_STORAGE_KEY) {
+        try {
+          const parsed = event.newValue ? JSON.parse(event.newValue) : [];
+          setOrders(Array.isArray(parsed) ? parsed : []);
+        } catch {
+          setOrders([]);
+        }
       }
     }
     window.addEventListener("storage", onStorage);
@@ -635,6 +711,53 @@ export default function App() {
     return data;
   }
 
+  function recordPaidOrder(session) {
+    const sessionId = session?.session_id;
+    if (!sessionId) {
+      return;
+    }
+
+    const snapshot = readCheckoutSnapshot();
+    const storeId =
+      session.store_id ||
+      snapshot?.storeId ||
+      window.sessionStorage.getItem(CHECKOUT_STORE_KEY) ||
+      "";
+    const storeName = session.store_name || snapshot?.storeName || storeId || "Store";
+
+    let items = normalizeOrderItems(snapshot?.items);
+    if (items.length === 0 && storeId) {
+      const storedCarts = readJsonStorage(CARTS_STORAGE_KEY, {});
+      const storedCatalog = readJsonStorage(CART_CATALOG_STORAGE_KEY, {});
+      items = normalizeOrderItems(buildCartItems(storedCarts[storeId] || {}, storedCatalog, {}));
+    }
+
+    let total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    if (typeof snapshot?.total === "number" && snapshot.total > 0) {
+      total = snapshot.total;
+    }
+    if (typeof session.amount_total === "number" && session.amount_total >= 0) {
+      total = session.amount_total / 100;
+    }
+
+    const order = {
+      sessionId,
+      storeId,
+      storeName,
+      items,
+      total,
+      placedAt: Date.now()
+    };
+
+    setOrders((prev) => {
+      if (prev.some((existing) => existing.sessionId === sessionId)) {
+        return prev;
+      }
+      return [order, ...prev];
+    });
+    setNowMs(Date.now());
+  }
+
   async function startCheckout() {
     if (cartItems.length === 0 || !activeStoreId) {
       return;
@@ -648,6 +771,15 @@ export default function App() {
     });
     try {
       window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
+      window.sessionStorage.setItem(
+        CHECKOUT_SNAPSHOT_KEY,
+        JSON.stringify({
+          storeId: activeStoreId,
+          storeName: selectedStore?.name || activeStoreId,
+          items: normalizeOrderItems(cartItems),
+          total: cartTotal
+        })
+      );
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -673,6 +805,7 @@ export default function App() {
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -699,6 +832,7 @@ export default function App() {
           message: "Checkout canceled. Your cart is still saved."
         });
         window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+        window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       }
 
       if (status === "success" && sessionId) {
@@ -709,9 +843,10 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            recordPaidOrder(session);
             setCheckoutState({
               type: "success",
-              message: "Payment confirmed. Your grocery order is placed."
+              message: "Payment confirmed. Your grocery order is placed — track it in Orders."
             });
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
@@ -719,6 +854,7 @@ export default function App() {
               clearStoreCart(checkedOutStoreId);
             }
             window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+            window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
           } else {
             setCheckoutState({
               type: "warning",
@@ -837,6 +973,17 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setSelectedOrderId(null);
+              setActivePage("orders");
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1057,6 +1204,20 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orders}
+          nowMs={nowMs}
+          selectedOrderId={selectedOrderId}
+          onSelectOrder={setSelectedOrderId}
+          onBackToList={() => setSelectedOrderId(null)}
+          onBackHome={() => {
+            setSelectedOrderId(null);
+            setActivePage("stores");
+          }}
+        />
       ) : null}
 
       {activePage === "profile" ? (
