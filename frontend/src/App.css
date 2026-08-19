@@ -618,6 +618,28 @@ body {
   background: #fff;
 }
 
+.slotPicker {
+  margin-bottom: 8px;
+}
+
+.slotPickerLabel {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2b2b2b;
+}
+
+.slotChips {
+  margin-bottom: 0;
+}
+
+.slotHint {
+  margin: 8px 0 0;
+  color: #912525;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .checkoutBtn {
   margin-top: 10px;
   width: 100%;
