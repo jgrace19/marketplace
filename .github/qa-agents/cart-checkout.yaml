@@ -36,4 +36,7 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - On Shop, the Compare price control calls GET /api/price-check. An invalid
+    or unreachable product URL must not crash the page; the API should return
+    400/502 rather than an unhandled 500.
 max_turns: 60
