@@ -1,0 +1,20 @@
+id: price-check
+description: |
+  Compare-price flow via GET /api/price-check. Should run if the diff touches
+  the price-check endpoint, outbound URL fetching, or the compare-price UI.
+paths:
+  - "backend/main.py"
+  - "backend/test_price_check.py"
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+focus_prompt: |
+  Probe the compare-price flow for bugs. Cover:
+  - Submitting a scheme-less URL like `www.comparableprice.com` shows a user-facing
+    error (HTTP 400) and does not crash the page or produce an unhandled 500.
+  - Submitting `not-a-url` returns a clear validation error (HTTP 400).
+  - Submitting `http://definitely-not-a-real-host.invalid/product` shows a fetch
+    failure message (HTTP 502), not a generic server error.
+  - Submitting a reachable https URL returns success metadata (status_code and
+    content_length) in the UI notice.
+  - The Compare price button disables while loading and re-enables afterward.
+max_turns: 40
