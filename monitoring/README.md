@@ -3,10 +3,11 @@
 APM error-rate monitor for `marketplace-backend` (`env:local`). It is the
 trigger point for a Cursor remediation automation.
 
-> **Note:** An older demo intentionally made `GET /api/recommendations` raise
-> `ZeroDivisionError`. Multi-store marketplace removed that bug — Today's Deals
-> now returns store-scoped deals successfully. The monitor still watches service
-> error spans; fire it with a real failure path or a temporary fault injection.
+> **Note:** The monitor watches **all** `marketplace-backend` FastAPI error spans
+> (`env:local`), not only `/api/recommendations`. A common failure mode was
+> `GET /api/price-check` raising unhandled `requests` errors (e.g. `MissingSchema`
+> for scheme-less hosts, `ConnectionError` for unreachable URLs) — that path now
+> returns HTTP 400/502 instead of 500.
 
 ## Apply it
 
