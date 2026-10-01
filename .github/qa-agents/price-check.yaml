@@ -1,0 +1,23 @@
+id: price-check
+description: |
+  Compare-price URL validation and outbound request handling. Should run if the
+  price-check API, compare-price UI, or shared request handling changes.
+paths:
+  - "backend/main.py"
+  - "backend/test_main.py"
+  - "backend/requirements.txt"
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+focus_prompt: |
+  Probe the compare-price flow for bugs. Cover:
+  - Open Compare prices from the header, submit a reachable public http(s) URL,
+    and verify the UI displays its HTTP status and content length.
+  - Submit scheme-less and malformed values such as `www.example.com` and
+    `not-a-url`; both must show a clear validation error backed by HTTP 400.
+  - Submit a non-http(s) URL and a localhost or private-IP URL; neither may
+    trigger an outbound request.
+  - Submit an unreachable public URL and verify the API returns HTTP 502 with a
+    clear detail message instead of an unhandled 500.
+  - Confirm outbound requests use a finite timeout and that loading state clears
+    after both successful and failed requests.
+max_turns: 40

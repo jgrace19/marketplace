@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import ipaddress
 import os
-from typing import List, Optional
 import re
+import socket
+import time
+from typing import List, Optional
+from urllib.parse import urlsplit
 
+import requests
 import stripe
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
@@ -30,6 +35,11 @@ CORS_ORIGINS = [
     for origin in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
     if origin.strip()
 ]
+REQUEST_HEADERS = {"User-Agent": "FreshCart-PriceCheck/1.0"}
+PRICE_CHECK_CONNECT_TIMEOUT_SECONDS = 3
+PRICE_CHECK_READ_TIMEOUT_SECONDS = 5
+PRICE_CHECK_TOTAL_TIMEOUT_SECONDS = 10
+PRICE_CHECK_MAX_CONTENT_BYTES = 1_000_000
 
 
 @dataclass
@@ -83,6 +93,65 @@ def _require_store(store_id: str) -> str:
     if get_store(cleaned) is None:
         raise HTTPException(status_code=404, detail=f"Unknown store_id '{cleaned}'.")
     return cleaned
+
+
+def _validate_price_check_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned or any(character.isspace() for character in cleaned):
+        raise HTTPException(status_code=400, detail="A valid http(s) URL is required.")
+
+    try:
+        parsed = urlsplit(cleaned)
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="A valid http(s) URL is required.") from exc
+
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise HTTPException(status_code=400, detail="A valid http(s) URL is required.")
+
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        raise HTTPException(status_code=400, detail="A public http(s) URL is required.")
+
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        address = None
+    if address is not None and (not address.is_global or address.is_multicast):
+        raise HTTPException(status_code=400, detail="A public http(s) URL is required.")
+    if address is None:
+        labels = hostname.split(".")
+        if len(labels) < 2 or any(
+            not re.fullmatch(r"(?!-)[a-z0-9-]{1,63}(?<!-)", label) for label in labels
+        ):
+            raise HTTPException(status_code=400, detail="A valid http(s) URL is required.")
+
+    return cleaned
+
+
+def _require_public_destination(url: str) -> None:
+    parsed = urlsplit(url)
+    port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to reach the comparison URL.",
+        ) from exc
+
+    if not addresses:
+        raise HTTPException(status_code=502, detail="Unable to reach the comparison URL.")
+
+    for *_, socket_address in addresses:
+        address = ipaddress.ip_address(socket_address[0].split("%", 1)[0])
+        if not address.is_global or address.is_multicast:
+            raise HTTPException(status_code=400, detail="A public http(s) URL is required.")
 
 
 class CheckoutItem(BaseModel):
@@ -159,6 +228,45 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
         "average_deal_price": average_deal_price,
         "items": [asdict(p) for p in discounted],
         "store_id": resolved_store,
+    }
+
+
+@app.get("/api/price-check")
+def price_check(url: str = Query(default="")) -> dict:
+    validated_url = _validate_price_check_url(url)
+    _require_public_destination(validated_url)
+    deadline = time.monotonic() + PRICE_CHECK_TOTAL_TIMEOUT_SECONDS
+    response = None
+    try:
+        response = requests.get(
+            validated_url,
+            headers=REQUEST_HEADERS,
+            timeout=(
+                PRICE_CHECK_CONNECT_TIMEOUT_SECONDS,
+                PRICE_CHECK_READ_TIMEOUT_SECONDS,
+            ),
+            allow_redirects=False,
+            stream=True,
+        )
+        content_length = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if time.monotonic() > deadline:
+                raise requests.Timeout("Price check exceeded its total timeout.")
+            content_length += len(chunk)
+            if content_length > PRICE_CHECK_MAX_CONTENT_BYTES:
+                raise requests.RequestException("Price check response was too large.")
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to reach the comparison URL.",
+        ) from exc
+    finally:
+        if response is not None:
+            response.close()
+
+    return {
+        "status_code": response.status_code,
+        "content_length": content_length,
     }
 
 
