@@ -1,0 +1,22 @@
+id: order-history
+description: |
+  Order history and simulated live status tracker. Should run if the diff
+  touches checkout success persistence, the Orders page, or the order stepper.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/OrdersPage.jsx"
+  - "backend/main.py"
+focus_prompt: |
+  Probe the Orders page and post-checkout persistence for bugs. Cover:
+  - After a paid Stripe checkout (`payment_status === "paid"`), exactly one
+    order is stored in localStorage keyed by session_id. Replaying the same
+    success URL / session_id must not create a second record.
+  - Header "Orders" opens a list with store name, date, total, and status.
+  - A new order starts at "Placed". Without reloading, the stepper advances
+    on a timer through Shopping → On the way → Delivered.
+  - Reload the page mid-progress: history remains and the current stage is
+    unchanged (derived from the original placed timestamp, not reset).
+  - Opening an order shows the purchased line items and quantities.
+  - Unpaid or canceled checkouts must not create an order.
+max_turns: 60

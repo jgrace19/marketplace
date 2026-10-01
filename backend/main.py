@@ -226,7 +226,17 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
             detail=f"Unable to retrieve Stripe checkout session: {exc}",
         ) from exc
 
-    metadata = session.metadata or {}
+    metadata = session.metadata
+    if metadata is None:
+        metadata_dict = {}
+    elif hasattr(metadata, "to_dict"):
+        # stripe-python returns StripeObject here; it has no dict.get().
+        metadata_dict = metadata.to_dict()
+    elif isinstance(metadata, dict):
+        metadata_dict = metadata
+    else:
+        metadata_dict = {}
+
     return {
         "session_id": session.id,
         "status": session.status,
@@ -234,6 +244,6 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "customer_email": session.customer_details.email if session.customer_details else None,
         "amount_total": session.amount_total,
         "currency": session.currency,
-        "store_id": metadata.get("store_id") or "",
-        "store_name": metadata.get("store_name") or "",
+        "store_id": metadata_dict.get("store_id") or "",
+        "store_name": metadata_dict.get("store_name") or "",
     }
