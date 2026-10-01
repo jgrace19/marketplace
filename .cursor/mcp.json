@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "datadog": {
+      "url": "https://mcp.us5.datadoghq.com/api/unstable/mcp-server/mcp",
+      "headers": {
+        "DD-API-KEY": "${DD_API_KEY}",
+        "DD-APPLICATION-KEY": "${DD_APP_KEY}"
+      }
+    }
+  }
+}
