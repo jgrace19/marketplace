@@ -14,6 +14,10 @@ export default function CartDrawer({
   subtotal,
   otherCarts,
   checkoutLoading,
+  deliverySlots,
+  selectedSlot,
+  slotsLoading,
+  onSelectSlot,
   onClose,
   onIncrease,
   onDecrease,
@@ -23,6 +27,7 @@ export default function CartDrawer({
   const fulfillment = supportsPickup
     ? `Delivery or pickup · ${etaLabel || "ASAP"}`
     : `Delivery · ${etaLabel || "ASAP"}`;
+  const needsSlot = items.length > 0 && !selectedSlot;
 
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label={`${storeName} cart`}>
@@ -88,12 +93,33 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
+          {items.length > 0 ? (
+            <div className="slotPicker">
+              <p className="slotPickerLabel">Delivery window</p>
+              {slotsLoading ? <p className="slotHint">Loading delivery windows...</p> : null}
+              <div className="chips slotChips">
+                {deliverySlots.map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    className={`chip ${selectedSlot === slot.label ? "chipActive" : ""}`}
+                    onClick={() => onSelectSlot(slot.label)}
+                  >
+                    {slot.label}
+                  </button>
+                ))}
+              </div>
+              {needsSlot ? (
+                <p className="slotHint">Choose a delivery window to continue</p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutLoading || items.length === 0 || !selectedSlot}
           >
             {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
           </button>
