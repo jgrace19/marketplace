@@ -226,12 +226,13 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
             detail=f"Unable to retrieve Stripe checkout session: {exc}",
         ) from exc
 
-    metadata = session.metadata or {}
+    metadata = session.metadata.to_dict() if session.metadata else {}
+    customer_details = session.customer_details
     return {
         "session_id": session.id,
         "status": session.status,
         "payment_status": session.payment_status,
-        "customer_email": session.customer_details.email if session.customer_details else None,
+        "customer_email": customer_details.email if customer_details else None,
         "amount_total": session.amount_total,
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
