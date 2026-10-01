@@ -779,6 +779,192 @@ body {
   z-index: 20;
 }
 
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersPage h2 {
+  margin: 0;
+}
+
+.ordersPage > p {
+  margin-top: 8px;
+  color: #4f4f4f;
+}
+
+.ordersEmpty {
+  margin-top: 16px;
+  color: #4f4f4f;
+}
+
+.orderCardList {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orderCard {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e9ece8;
+  background: #f7f8f6;
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.orderCard:hover {
+  border-color: #c8d0c4;
+  background: #f1f4ef;
+}
+
+.orderCardTop,
+.orderCardMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.orderCardTop {
+  margin-bottom: 8px;
+}
+
+.orderCardStatus {
+  color: #108910;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.orderCardMeta {
+  color: #4f4f4f;
+  font-size: 0.9rem;
+}
+
+.orderDetail > .secondaryBtn {
+  margin-bottom: 14px;
+}
+
+.ordersMeta,
+.ordersStatusLine {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.orderStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  position: relative;
+}
+
+.orderStep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: calc(50% + 12px);
+  width: calc(100% - 24px);
+  height: 2px;
+  background: #d2d6d0;
+}
+
+.orderStep.done:not(:last-child)::after,
+.orderStep.active:not(:last-child)::after {
+  background: #108910;
+}
+
+.orderStepDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid #d2d6d0;
+  background: #fff;
+  z-index: 1;
+}
+
+.orderStep.done .orderStepDot,
+.orderStep.active .orderStepDot {
+  border-color: #108910;
+  background: #108910;
+}
+
+.orderStepLabel {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #6b6b6b;
+}
+
+.orderStep.done .orderStepLabel,
+.orderStep.active .orderStepLabel {
+  color: #176a2d;
+}
+
+.orderItemsHeading {
+  margin: 24px 0 10px;
+  font-size: 1.05rem;
+}
+
+.orderItemsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orderItemRow {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef1ec;
+}
+
+.orderItemThumb,
+.orderItemThumbPlaceholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #eef1ec;
+}
+
+.orderItemInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.orderItemInfo span {
+  color: #4f4f4f;
+  font-size: 0.88rem;
+}
+
+.orderItemLineTotal {
+  font-weight: 700;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
@@ -787,5 +973,13 @@ body {
   .cartsHubPanel,
   .cartDrawerPanel {
     width: 100%;
+  }
+
+  .orderStepper {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .orderStep:not(:last-child)::after {
+    display: none;
   }
 }
