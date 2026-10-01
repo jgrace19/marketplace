@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import ListsPage from "./ListsPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -9,6 +10,7 @@ const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const LISTS_STORAGE_KEY = "freshcart-lists";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
@@ -142,6 +144,30 @@ function pruneCartCatalog(carts, catalog) {
   return next;
 }
 
+function createListId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeLists(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((list) => list && typeof list === "object" && typeof list.id === "string")
+    .map((list) => ({
+      id: list.id,
+      name: typeof list.name === "string" && list.name.trim() ? list.name : "Shopping list",
+      items: Array.isArray(list.items)
+        ? list.items
+            .filter((item) => item && typeof item === "object" && typeof item.id === "string")
+            .map((item) => snapshotProduct(item))
+        : []
+    }));
+}
+
 export default function App() {
   const [activePage, setActivePage] = useState("stores");
   const [selectedZip, setSelectedZip] = useState(DEFAULT_ZIP);
@@ -171,6 +197,15 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [lists, setLists] = useState(() =>
+    normalizeLists(readJsonStorage(LISTS_STORAGE_KEY, []))
+  );
+  const [selectedListId, setSelectedListId] = useState(() => {
+    const stored = normalizeLists(readJsonStorage(LISTS_STORAGE_KEY, []));
+    return stored[0]?.id || "";
+  });
+  const [listsNotice, setListsNotice] = useState("");
+  const [listPickerProduct, setListPickerProduct] = useState(null);
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +224,22 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LISTS_STORAGE_KEY, JSON.stringify(lists));
+  }, [lists]);
+
+  useEffect(() => {
+    if (lists.length === 0) {
+      if (selectedListId) {
+        setSelectedListId("");
+      }
+      return;
+    }
+    if (!lists.some((list) => list.id === selectedListId)) {
+      setSelectedListId(lists[0].id);
+    }
+  }, [lists, selectedListId]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -768,6 +819,127 @@ export default function App() {
     setProfileNotice("Profile saved.");
   }
 
+  function createList(name = "Shopping list") {
+    const list = {
+      id: createListId(),
+      name: name.trim() || "Shopping list",
+      items: []
+    };
+    setLists((prev) => [...prev, list]);
+    setSelectedListId(list.id);
+    setListsNotice(`Created “${list.name}”.`);
+    return list;
+  }
+
+  function renameList(listId, name) {
+    setLists((prev) =>
+      prev.map((list) => (list.id === listId ? { ...list, name } : list))
+    );
+  }
+
+  function deleteList(listId) {
+    setLists((prev) => prev.filter((list) => list.id !== listId));
+    setListsNotice("List deleted.");
+  }
+
+  function addProductToList(listId, product) {
+    if (!listId || !product?.id) {
+      return;
+    }
+    const snapshot = snapshotProduct(product);
+    let listName = "list";
+    setLists((prev) =>
+      prev.map((list) => {
+        if (list.id !== listId) {
+          return list;
+        }
+        listName = list.name;
+        if (list.items.some((item) => item.id === snapshot.id)) {
+          return list;
+        }
+        return { ...list, items: [...list.items, snapshot] };
+      })
+    );
+    setListsNotice(`Added ${snapshot.name} to “${listName}”.`);
+    setListPickerProduct(null);
+  }
+
+  function removeItemFromList(listId, productId) {
+    setLists((prev) =>
+      prev.map((list) =>
+        list.id === listId
+          ? { ...list, items: list.items.filter((item) => item.id !== productId) }
+          : list
+      )
+    );
+  }
+
+  function handleBookmarkClick(product) {
+    if (lists.length === 0) {
+      const list = {
+        id: createListId(),
+        name: "Weekly staples",
+        items: [snapshotProduct(product)]
+      };
+      setLists([list]);
+      setSelectedListId(list.id);
+      setListsNotice(`Created “${list.name}” and added ${product.name}.`);
+      setListPickerProduct(null);
+      return;
+    }
+    if (lists.length === 1) {
+      addProductToList(lists[0].id, product);
+      return;
+    }
+    setListPickerProduct(product);
+  }
+
+  function addAllListItemsToCart(listId) {
+    if (!activeStoreId) {
+      setListsNotice("Pick a store before adding a list to your cart.");
+      setActivePage("stores");
+      return;
+    }
+    const list = lists.find((entry) => entry.id === listId);
+    if (!list || list.items.length === 0) {
+      return;
+    }
+
+    const snapshots = list.items.map((item) =>
+      snapshotProduct({ ...item, store_id: activeStoreId })
+    );
+    setCartCatalog((prev) => {
+      const next = { ...prev };
+      for (const snapshot of snapshots) {
+        next[snapshot.id] = snapshot;
+      }
+      return next;
+    });
+    setProductCatalog((prev) => {
+      const next = { ...prev };
+      for (const snapshot of snapshots) {
+        next[snapshot.id] = { ...prev[snapshot.id], ...snapshot };
+      }
+      return next;
+    });
+    setCarts((prev) => {
+      const storeCart = { ...(prev[activeStoreId] || {}) };
+      for (const snapshot of snapshots) {
+        storeCart[snapshot.id] = (storeCart[snapshot.id] || 0) + 1;
+      }
+      return { ...prev, [activeStoreId]: storeCart };
+    });
+    setListsNotice(
+      `Added ${snapshots.length} item${snapshots.length === 1 ? "" : "s"} from “${
+        list.name
+      }” to your ${selectedStore?.name || "store"} cart.`
+    );
+  }
+
+  function isProductInAnyList(productId) {
+    return lists.some((list) => list.items.some((item) => item.id === productId));
+  }
+
   function closeCartPanel() {
     pendingContinueRef.current = null;
     setCartPanel(null);
@@ -837,6 +1009,17 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setListsNotice("");
+              setActivePage("lists");
+              closeCartPanel();
+            }}
+          >
+            Lists
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1009,9 +1192,25 @@ export default function App() {
             <section className="productsGrid">
               {products.map((product) => {
                 const qty = quantityForProduct(product);
+                const bookmarked = isProductInAnyList(product.id);
                 return (
                   <article className="card" key={product.id}>
-                    <img src={product.image_url} alt={product.name} />
+                    <div className="cardMedia">
+                      <img src={product.image_url} alt={product.name} />
+                      <button
+                        type="button"
+                        className={`bookmarkBtn ${bookmarked ? "bookmarkBtnActive" : ""}`}
+                        onClick={() => handleBookmarkClick(product)}
+                        aria-label={
+                          bookmarked
+                            ? `${product.name} is on a list`
+                            : `Add ${product.name} to a list`
+                        }
+                        title="Save to list"
+                      >
+                        {bookmarked ? "★" : "☆"}
+                      </button>
+                    </div>
                     <h3>{product.name}</h3>
                     <p>{product.description}</p>
                     <div className="row">
@@ -1057,6 +1256,22 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "lists" ? (
+        <ListsPage
+          lists={lists}
+          selectedListId={selectedListId}
+          activeStoreName={selectedStore?.name || ""}
+          notice={listsNotice}
+          onSelectList={setSelectedListId}
+          onCreateList={() => createList()}
+          onRenameList={renameList}
+          onDeleteList={deleteList}
+          onRemoveItem={removeItemFromList}
+          onAddAllToCart={addAllListItemsToCart}
+          onBack={() => setActivePage(selectedStore ? "shop" : "stores")}
+        />
       ) : null}
 
       {activePage === "profile" ? (
@@ -1164,6 +1379,65 @@ export default function App() {
             </div>
           </form>
         </section>
+      ) : null}
+
+      {listPickerProduct ? (
+        <div className="listPickerOverlay" role="dialog" aria-modal="true" aria-label="Save to list">
+          <button
+            type="button"
+            className="cartOverlayBackdrop"
+            onClick={() => setListPickerProduct(null)}
+            aria-label="Close"
+          />
+          <div className="listPickerPanel">
+            <header className="listPickerHeader">
+              <div>
+                <h2>Save to list</h2>
+                <p>{listPickerProduct.name}</p>
+              </div>
+              <button
+                type="button"
+                className="cartPanelClose"
+                onClick={() => setListPickerProduct(null)}
+                aria-label="Close list picker"
+              >
+                ×
+              </button>
+            </header>
+            <ul className="listPickerOptions">
+              {lists.map((list) => (
+                <li key={list.id}>
+                  <button
+                    type="button"
+                    className="listPickerOption"
+                    onClick={() => addProductToList(list.id, listPickerProduct)}
+                  >
+                    <span>{list.name}</span>
+                    <span className="listsSidebarCount">{list.items.length}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => {
+                const product = listPickerProduct;
+                const list = {
+                  id: createListId(),
+                  name: "Shopping list",
+                  items: [snapshotProduct(product)]
+                };
+                setLists((prev) => [...prev, list]);
+                setSelectedListId(list.id);
+                setListsNotice(`Created “${list.name}” and added ${product.name}.`);
+                setListPickerProduct(null);
+              }}
+            >
+              Create new list
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {cartPanel === "hub" ? (
