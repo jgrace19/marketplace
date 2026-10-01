@@ -304,6 +304,7 @@ body {
 }
 
 .card {
+  position: relative;
   background: #ffffff;
   border-radius: 16px;
   border: 1px solid #eceeea;
@@ -312,6 +313,76 @@ body {
   flex-direction: column;
   gap: 8px;
   box-shadow: 0 2px 8px rgba(22, 29, 22, 0.05);
+}
+
+.bookmarkWrap {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.bookmarkBtn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d2d6d0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #3d463d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(22, 29, 22, 0.08);
+}
+
+.bookmarkBtn:hover,
+.bookmarkBtnActive {
+  border-color: #108910;
+  color: #108910;
+}
+
+.bookmarkMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  max-width: 220px;
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(22, 29, 22, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bookmarkMenuItem {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #1f1f1f;
+}
+
+.bookmarkMenuItem:hover {
+  background: #f0f7f0;
+  color: #108910;
+}
+
+.bookmarkMenuEmpty {
+  margin: 0;
+  padding: 10px;
+  font-size: 0.82rem;
+  color: #4f4f4f;
+  line-height: 1.35;
 }
 
 .card img {
@@ -779,6 +850,141 @@ body {
   z-index: 20;
 }
 
+.listsPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.listsPage h2 {
+  margin: 0;
+}
+
+.listsPage > p {
+  margin-top: 8px;
+  color: #4f4f4f;
+}
+
+.listsCreateForm {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.listsCreateForm input {
+  flex: 1;
+  border: 1px solid #d2d6d0;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.listsCreateBtn {
+  margin-top: 0;
+  width: auto;
+  white-space: nowrap;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.listsEmpty {
+  margin-top: 18px;
+  color: #4f4f4f;
+}
+
+.listsGrid {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.listsCard {
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.listsCardTop {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.listsCardMeta {
+  min-width: 0;
+  flex: 1;
+}
+
+.listsCardMeta h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.listsRenameToggle {
+  border: none;
+  background: transparent;
+  color: #108910;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.listsRenameRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.listsRenameRow input {
+  flex: 1;
+  border: 1px solid #d2d6d0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.listsRenameSave {
+  margin-top: 0;
+  width: auto;
+  padding: 8px 12px;
+}
+
+.listsCount {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #4f4f4f;
+}
+
+.listsCardEmpty {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #4f4f4f;
+}
+
+.listsItemRows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
@@ -786,6 +992,14 @@ body {
 
   .cartsHubPanel,
   .cartDrawerPanel {
+    width: 100%;
+  }
+
+  .listsCreateForm {
+    flex-direction: column;
+  }
+
+  .listsCreateBtn {
     width: 100%;
   }
 }
