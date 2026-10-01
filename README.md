@@ -47,6 +47,20 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Run tests
+
+Backend tests use pytest and FastAPI's `TestClient`. They stay offline: checkout tests mock the Stripe client, so no secret key is required.
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+Pull requests, and pushes to `main`, run this suite and a frontend production build (`npm ci && npm run build`) in `.github/workflows/ci.yml`.
+
 ## Stripe Checkout setup
 
 Add sandbox keys in `.env`:
