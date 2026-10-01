@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from decimal import Decimal
+from sqlite3 import Connection as SQLiteConnection
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -29,8 +30,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
-    if connection_record.dialect.name != "sqlite":
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    if not isinstance(dbapi_connection, SQLiteConnection):
         return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
