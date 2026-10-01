@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -14,8 +12,6 @@ DEFAULT_DATABASE_URL = "sqlite:///./freshcart.db"
 DEFAULT_SAVED_CART_TTL_DAYS = 30
 DELETE_BATCH_SIZE = 500
 JOB_NAME = "expire-saved-carts"
-
-logger = logging.getLogger(JOB_NAME)
 
 
 def saved_carts_enabled() -> bool:
@@ -52,10 +48,14 @@ def create_db_engine(url: Optional[str] = None) -> Engine:
     return engine
 
 
-def _utc_iso(value: datetime) -> str:
+def _naive_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat()
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _sql_ts(value: datetime) -> str:
+    return _naive_utc(value).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def expire_saved_carts(
@@ -67,8 +67,7 @@ def expire_saved_carts(
     if not saved_carts_enabled():
         return 0
 
-    clock = now or datetime.now(timezone.utc)
-    now_iso = _utc_iso(clock)
+    clock = _sql_ts(now or datetime.now(timezone.utc))
     own_engine = engine is None
     db = engine or create_db_engine()
     deleted = 0
@@ -87,7 +86,7 @@ def expire_saved_carts(
                         )
                         """
                     ),
-                    {"now": now_iso, "batch_size": batch_size},
+                    {"now": clock, "batch_size": batch_size},
                 )
                 batch_deleted = result.rowcount or 0
             deleted += batch_deleted
@@ -101,14 +100,10 @@ def expire_saved_carts(
 
 
 def _log_result(deleted: int) -> None:
-    payload = {"job": JOB_NAME, "deleted": deleted}
-    line = json.dumps(payload)
-    logger.info(line)
-    print(line, flush=True)
+    print(json.dumps({"job": JOB_NAME, "deleted": deleted}), flush=True)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
     deleted = expire_saved_carts()
     _log_result(deleted)
 

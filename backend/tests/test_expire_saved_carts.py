@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, event, text
 
 from jobs.expire_saved_carts import (
     DEFAULT_SAVED_CART_TTL_DAYS,
+    DELETE_BATCH_SIZE,
     compute_expires_at,
     expire_saved_carts,
     main,
@@ -44,8 +45,8 @@ CREATE TABLE saved_cart_items (
 """
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat()
+def _sql_ts(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _enable_sqlite_fk(engine) -> None:
@@ -101,8 +102,8 @@ def _insert_cart(
                 "shopper_id": shopper_id,
                 "store_id": store_id,
                 "name": name,
-                "created_at": _iso(created),
-                "expires_at": _iso(expires_at),
+                "created_at": _sql_ts(created),
+                "expires_at": _sql_ts(expires_at),
             },
         )
         for product_id, quantity, unit_price in items or []:
@@ -198,6 +199,7 @@ def test_items_cascade_when_cart_expires(engine):
 
 
 def test_deletes_in_batches_of_500(engine):
+    assert DELETE_BATCH_SIZE == 500
     for i in range(5):
         _insert_cart(
             engine,
