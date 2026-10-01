@@ -56,10 +56,10 @@ export function normalizeSavedCartList(payload) {
 }
 
 function errorMessage(data, status) {
-  if (status === 404) {
+  const detail = data?.detail;
+  if (status === 404 && (detail === "Not Found" || !detail)) {
     return "Saved carts are unavailable until the saved-cart API is enabled.";
   }
-  const detail = data?.detail;
   if (typeof detail === "string" && detail.trim()) {
     return detail;
   }
