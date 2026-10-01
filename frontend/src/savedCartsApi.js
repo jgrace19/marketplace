@@ -56,6 +56,9 @@ export function normalizeSavedCartList(payload) {
 }
 
 function errorMessage(data, status) {
+  if (status === 404) {
+    return "Saved carts are unavailable until the saved-cart API is enabled.";
+  }
   const detail = data?.detail;
   if (typeof detail === "string" && detail.trim()) {
     return detail;
@@ -84,13 +87,23 @@ async function request(path, options = {}) {
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(errorMessage(data, response.status));
+    const error = new Error(errorMessage(data, response.status));
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
 
-export function listSavedCarts() {
-  return request("/api/saved-carts");
+export async function listSavedCarts() {
+  try {
+    return await request("/api/saved-carts");
+  } catch (err) {
+    // Route missing until FE-6 is deployed — treat as an empty list.
+    if (err.status === 404) {
+      return { items: [] };
+    }
+    throw err;
+  }
 }
 
 export function saveCart({ storeId, items, name }) {
