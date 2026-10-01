@@ -5,3 +5,4 @@ beautifulsoup4
 stripe
 python-dotenv
 ddtrace
+sqlalchemy>=2.0,<3

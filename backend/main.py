@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from saved_carts import router as saved_carts_router
 from stores import (
     get_products_for_store,
     get_store,
@@ -118,6 +119,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(saved_carts_router)
 
 
 @app.get("/api/health")
