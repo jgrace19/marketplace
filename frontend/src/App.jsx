@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import {
+  catalogEntriesFromRestore,
+  createSavedCart,
+  deleteSavedCart,
+  listSavedCarts,
+  mergeRestoredQuantities,
+  restoreSavedCart,
+  savedCartsEnabled,
+  skippedItemsNotice,
+  takeSavedCartSnapshot
+} from "./savedCartsApi";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -161,6 +172,13 @@ export default function App() {
   );
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [savedCarts, setSavedCarts] = useState([]);
+  const [savedCartsLoading, setSavedCartsLoading] = useState(false);
+  const [savedCartsError, setSavedCartsError] = useState("");
+  const [savedCartsNotice, setSavedCartsNotice] = useState("");
+  const [pendingSavedCartId, setPendingSavedCartId] = useState("");
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
   const [checkoutState, setCheckoutState] = useState({
@@ -176,7 +194,9 @@ export default function App() {
   const selectedZipRef = useRef(selectedZip);
   const storesZipRef = useRef("");
   const pendingContinueRef = useRef(null);
+  const cartsRef = useRef(carts);
   selectedZipRef.current = selectedZip;
+  cartsRef.current = carts;
 
   useEffect(() => {
     window.localStorage.setItem(CARTS_STORAGE_KEY, JSON.stringify(carts));
@@ -771,6 +791,113 @@ export default function App() {
   function closeCartPanel() {
     pendingContinueRef.current = null;
     setCartPanel(null);
+    setSaveError("");
+  }
+
+  function storeNameFor(storeId) {
+    return stores.find((store) => store.id === storeId)?.name || storeId;
+  }
+
+  useEffect(() => {
+    if (!savedCartsEnabled || cartPanel !== "hub") {
+      return undefined;
+    }
+    let cancelled = false;
+    setSavedCartsLoading(true);
+    setSavedCartsError("");
+    listSavedCarts()
+      .then((rows) => {
+        if (!cancelled) {
+          setSavedCarts(rows);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSavedCarts([]);
+          setSavedCartsError(err.message || "Couldn't load saved carts.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSavedCartsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cartPanel]);
+
+  async function saveActiveCartForLater() {
+    if (!savedCartsEnabled || cartItems.length === 0 || !activeStoreId || saveLoading) {
+      return;
+    }
+    setSaveLoading(true);
+    setSaveError("");
+    try {
+      await createSavedCart({
+        storeId: activeStoreId,
+        name: selectedStore?.name || activeStoreId,
+        items: cartItems
+      });
+      clearStoreCart(activeStoreId);
+    } catch (err) {
+      setSaveError(err.message || "Couldn't save this cart.");
+    } finally {
+      setSaveLoading(false);
+    }
+  }
+
+  function applyRestoredCart(storeId, items, snapshotItems) {
+    const entries = catalogEntriesFromRestore(items, snapshotItems, storeId);
+    const merged = mergeRestoredQuantities(cartsRef.current[storeId], items);
+    setCartCatalog((prev) => ({ ...prev, ...entries }));
+    setProductCatalog((prev) => ({ ...prev, ...entries }));
+    setCarts((prev) => ({
+      ...prev,
+      [storeId]: mergeRestoredQuantities(prev[storeId], items).cart
+    }));
+    return merged.capped;
+  }
+
+  async function restoreSavedCartById(savedCartId) {
+    const saved = savedCarts.find((cart) => cart.id === savedCartId);
+    if (!saved || pendingSavedCartId) {
+      return;
+    }
+    setPendingSavedCartId(savedCartId);
+    setSavedCartsError("");
+    setSavedCartsNotice("");
+    try {
+      const payload = await restoreSavedCart(savedCartId);
+      const storeId = payload?.store_id || saved.storeId;
+      const items = Array.isArray(payload?.items) ? payload.items : saved.items;
+      const snapshotItems = takeSavedCartSnapshot(savedCartId);
+      const capped = applyRestoredCart(storeId, items, snapshotItems);
+      setSavedCarts((prev) => prev.filter((cart) => cart.id !== savedCartId));
+      const skippedNotice = skippedItemsNotice(payload?.skipped);
+      const capNotice = capped ? "Some quantities were capped at 99." : "";
+      setSavedCartsNotice([skippedNotice, capNotice].filter(Boolean).join(" "));
+    } catch (err) {
+      setSavedCartsError(err.message || "Couldn't restore that cart.");
+    } finally {
+      setPendingSavedCartId("");
+    }
+  }
+
+  async function deleteSavedCartById(savedCartId) {
+    if (!savedCartId || pendingSavedCartId) {
+      return;
+    }
+    setPendingSavedCartId(savedCartId);
+    setSavedCartsError("");
+    try {
+      await deleteSavedCart(savedCartId);
+      setSavedCarts((prev) => prev.filter((cart) => cart.id !== savedCartId));
+    } catch (err) {
+      setSavedCartsError(err.message || "Couldn't delete that cart.");
+    } finally {
+      setPendingSavedCartId("");
+    }
   }
 
   function openCartPanel() {
@@ -1170,6 +1297,15 @@ export default function App() {
         <CartsHub
           zip={zipDisplay}
           carts={hubCarts}
+          savedCartsEnabled={savedCartsEnabled}
+          savedCarts={savedCarts.map((cart) => ({
+            ...cart,
+            storeName: storeNameFor(cart.storeId)
+          }))}
+          savedCartsLoading={savedCartsLoading}
+          savedCartsError={savedCartsError}
+          savedCartsNotice={savedCartsNotice}
+          pendingSavedCartId={pendingSavedCartId}
           onClose={closeCartPanel}
           onContinueShopping={continueShoppingFromHub}
           onDeleteCart={clearStoreCart}
@@ -1177,6 +1313,8 @@ export default function App() {
             closeCartPanel();
             setActivePage("stores");
           }}
+          onRestoreSavedCart={restoreSavedCartById}
+          onDeleteSavedCart={deleteSavedCartById}
         />
       ) : null}
 
@@ -1190,10 +1328,14 @@ export default function App() {
           subtotal={cartTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
+          savedCartsEnabled={savedCartsEnabled}
+          saveLoading={saveLoading}
+          saveError={saveError}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
           onCheckout={startCheckout}
+          onSaveForLater={saveActiveCartForLater}
           onSwitchCart={switchDrawerCart}
         />
       ) : null}
