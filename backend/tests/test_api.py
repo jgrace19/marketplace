@@ -357,3 +357,8 @@ def test_session_status_stripe_error_is_not_found(client, monkeypatch):
 
     assert response.status_code == 404
     assert "no such session" in response.json()["detail"]
+
+
+def test_intentional_ci_failure():
+    # Deliberate red check: Backend tests must fail on this pull request.
+    assert False, "intentional CI failure"
