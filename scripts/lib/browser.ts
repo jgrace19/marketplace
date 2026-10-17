@@ -2,8 +2,8 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { QaAgentConfig } from "./configs.js";
 import { FindingsBundleSchema, type Finding } from "./findings.js";
 import {
+  consumeRunWithTimeout,
   startStreamHeartbeat,
-  waitForRunWithTimeout,
 } from "./agent-runtime.js";
 
 const BROWSER_AGENT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -68,28 +68,30 @@ export async function runBrowserAgent(
 
     const heartbeat = startStreamHeartbeat({ label: config.id });
     let assistantText = "";
+    let result;
+    let timedOut = false;
+    let timeoutMs: number | undefined;
     try {
-      for await (const event of run.stream()) {
-        heartbeat.tick();
-        if (event.type === "assistant") {
-          for (const block of event.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              process.stdout.write(`[${config.id}] ${block.text}\n`);
-              assistantText += block.text;
+      ({ result, timedOut, timeoutMs } = await consumeRunWithTimeout(
+        run,
+        BROWSER_AGENT_TIMEOUT_MS,
+        (event) => {
+          heartbeat.tick();
+          if (event.type === "assistant") {
+            for (const block of event.message.content) {
+              if (block.type === "text" && block.text.trim()) {
+                process.stdout.write(`[${config.id}] ${block.text}\n`);
+                assistantText += block.text;
+              }
             }
+          } else if (event.type === "status") {
+            console.log(`[${config.id}] status=${event.status}`);
           }
-        } else if (event.type === "status") {
-          console.log(`[${config.id}] status=${event.status}`);
-        }
-      }
+        },
+      ));
     } finally {
       heartbeat.stop();
     }
-
-    const { result, timedOut, timeoutMs } = await waitForRunWithTimeout(
-      run,
-      BROWSER_AGENT_TIMEOUT_MS,
-    );
 
     if (timedOut) {
       return {
