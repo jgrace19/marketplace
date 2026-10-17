@@ -4,7 +4,9 @@ from dataclasses import dataclass, asdict
 import os
 from typing import List, Optional
 import re
+from urllib.parse import urlparse
 
+import requests
 import stripe
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
@@ -20,6 +22,14 @@ from stores import (
 
 load_dotenv()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173,http://127.0.0.1:5173,"
     "http://localhost:8080,http://127.0.0.1:8080,"
@@ -159,6 +169,33 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
         "average_deal_price": average_deal_price,
         "items": [asdict(p) for p in discounted],
         "store_id": resolved_store,
+    }
+
+
+@app.get("/api/price-check")
+def price_check(url: str = Query(...)) -> dict:
+    """Fetch an external product page and return its size, for price comparison."""
+    cleaned = (url or "").strip()
+    parsed = urlparse(cleaned)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail="A valid http(s) product URL is required.",
+        )
+
+    try:
+        response = requests.get(cleaned, headers=REQUEST_HEADERS, timeout=10)
+    except requests.RequestException as exc:
+        # Invalid/unreachable hosts must not become unhandled 500s (APM error spans).
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to fetch product URL: {exc}",
+        ) from exc
+
+    return {
+        "url": cleaned,
+        "status_code": response.status_code,
+        "content_length": len(response.content),
     }
 
 
