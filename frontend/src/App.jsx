@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import ListsPage from "./ListsPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -9,6 +10,7 @@ const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const LISTS_STORAGE_KEY = "freshcart-lists";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
@@ -159,6 +161,8 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [lists, setLists] = useState(() => readJsonStorage(LISTS_STORAGE_KEY, {}));
+  const [bookmarkMenuFor, setBookmarkMenuFor] = useState(null);
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -181,6 +185,23 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CARTS_STORAGE_KEY, JSON.stringify(carts));
   }, [carts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LISTS_STORAGE_KEY, JSON.stringify(lists));
+  }, [lists]);
+
+  useEffect(() => {
+    if (!bookmarkMenuFor) {
+      return undefined;
+    }
+    function handlePointerDown(event) {
+      if (!event.target.closest(".bookmarkWrap")) {
+        setBookmarkMenuFor(null);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [bookmarkMenuFor]);
 
   useEffect(() => {
     setCartCatalog((catalog) => pruneCartCatalog(carts, catalog));
@@ -474,6 +495,10 @@ export default function App() {
     return hubCarts.filter((cart) => cart.storeId !== activeStoreId);
   }, [hubCarts, activeStoreId]);
 
+  const sortedLists = useMemo(() => {
+    return Object.values(lists).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  }, [lists]);
+
   function pruneCartsToStores(storeList) {
     const availableIds = new Set(storeList.map((store) => store.id));
     setCarts((prev) => {
@@ -521,6 +546,103 @@ export default function App() {
       storeCart[productId] = (storeCart[productId] || 0) + 1;
       return { ...prev, [storeId]: storeCart };
     });
+  }
+
+  function createList(name) {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) {
+      return;
+    }
+    const id = `list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setLists((prev) => ({
+      ...prev,
+      [id]: {
+        id,
+        name: trimmed,
+        createdAt: Date.now(),
+        items: {}
+      }
+    }));
+  }
+
+  function renameList(listId, name) {
+    const trimmed = String(name || "").trim();
+    if (!listId || !trimmed) {
+      return;
+    }
+    setLists((prev) => {
+      const list = prev[listId];
+      if (!list) {
+        return prev;
+      }
+      return { ...prev, [listId]: { ...list, name: trimmed } };
+    });
+  }
+
+  function deleteList(listId) {
+    if (!listId) {
+      return;
+    }
+    setLists((prev) => {
+      const next = { ...prev };
+      delete next[listId];
+      return next;
+    });
+  }
+
+  function removeListItem(listId, productId) {
+    if (!listId || !productId) {
+      return;
+    }
+    setLists((prev) => {
+      const list = prev[listId];
+      if (!list) {
+        return prev;
+      }
+      const items = { ...list.items };
+      delete items[productId];
+      return { ...prev, [listId]: { ...list, items } };
+    });
+  }
+
+  function addProductToList(listId, product) {
+    if (!listId || !product?.id) {
+      return;
+    }
+    setLists((prev) => {
+      const list = prev[listId];
+      if (!list) {
+        return prev;
+      }
+      if (list.items?.[product.id]) {
+        return prev;
+      }
+      const snapshot = snapshotProduct(product);
+      return {
+        ...prev,
+        [listId]: {
+          ...list,
+          items: {
+            ...list.items,
+            [product.id]: { ...snapshot, qty: 1 }
+          }
+        }
+      };
+    });
+    setBookmarkMenuFor(null);
+  }
+
+  function addListToCart(listId) {
+    const list = lists[listId];
+    if (!list) {
+      return;
+    }
+    for (const item of Object.values(list.items || {})) {
+      const qty = item.qty || 1;
+      for (let i = 0; i < qty; i += 1) {
+        addToCart(item);
+      }
+    }
   }
 
   function decreaseItem(productId, storeId = activeStoreId) {
@@ -841,6 +963,16 @@ export default function App() {
             className="navLink"
             onClick={() => {
               setError("");
+              setActivePage("lists");
+              closeCartPanel();
+            }}
+          >
+            Lists
+          </button>
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
               setActivePage("profile");
               closeCartPanel();
             }}
@@ -1009,8 +1141,46 @@ export default function App() {
             <section className="productsGrid">
               {products.map((product) => {
                 const qty = quantityForProduct(product);
+                const menuOpen = bookmarkMenuFor === product.id;
                 return (
                   <article className="card" key={product.id}>
+                    <div className="bookmarkWrap">
+                      <button
+                        type="button"
+                        className={`bookmarkBtn ${menuOpen ? "bookmarkBtnActive" : ""}`}
+                        aria-label={`Save ${product.name} to list`}
+                        aria-expanded={menuOpen}
+                        onClick={() =>
+                          setBookmarkMenuFor((current) => (current === product.id ? null : product.id))
+                        }
+                      >
+                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                          <path
+                            d="M6 3.75A1.75 1.75 0 0 1 7.75 2h8.5A1.75 1.75 0 0 1 18 3.75v16.02a.75.75 0 0 1-1.2.6L12 16.5l-4.8 3.87a.75.75 0 0 1-1.2-.6V3.75Z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </button>
+                      {menuOpen ? (
+                        <div className="bookmarkMenu" role="menu" aria-label="Save to list">
+                          {sortedLists.length === 0 ? (
+                            <p className="bookmarkMenuEmpty">No lists yet — create one on the Lists page</p>
+                          ) : (
+                            sortedLists.map((list) => (
+                              <button
+                                key={list.id}
+                                type="button"
+                                className="bookmarkMenuItem"
+                                role="menuitem"
+                                onClick={() => addProductToList(list.id, product)}
+                              >
+                                {list.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                     <img src={product.image_url} alt={product.name} />
                     <h3>{product.name}</h3>
                     <p>{product.description}</p>
@@ -1057,6 +1227,18 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "lists" ? (
+        <ListsPage
+          lists={sortedLists}
+          onCreateList={createList}
+          onRenameList={renameList}
+          onDeleteList={deleteList}
+          onRemoveItem={removeListItem}
+          onAddAllToCart={addListToCart}
+          activeStoreName={selectedStore?.name || ""}
+        />
       ) : null}
 
       {activePage === "profile" ? (
