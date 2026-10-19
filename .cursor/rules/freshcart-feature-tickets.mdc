@@ -1,0 +1,19 @@
+---
+description: File FreshCart feature tickets in the Linear FreshCart project
+alwaysApply: true
+---
+
+# FreshCart feature tickets
+
+Create feature tickets for this repo in the Linear **FreshCart** project:
+
+https://linear.app/fe-demo/project/freshcart-536c4def58f4/overview
+
+- Team: Fe-demo (`FE`)
+- Project: FreshCart (`P-FE-1`)
+- Label: `Feature`
+- State: Backlog, unless the user names a different status
+
+Bug reports for this app stay on the same project with the `Bug` label. Do not file FreshCart feature work in another Linear project or in Jira unless the user names a different tracker.
+
+Write the ticket against the current app: FastAPI in `backend/`, React in `frontend/src/`, shopper state in `localStorage` (`freshcart-*` keys). Include acceptance criteria and a short verification flow.
