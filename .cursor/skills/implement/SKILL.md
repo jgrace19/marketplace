@@ -1,16 +1,25 @@
 ---
 name: implement
-description: Read a Jira ticket, plan the implementation, build it, and test it end to end. Use when the user asks to implement, build, or work a Jira ticket (e.g. "implement MAR-6", "/implement MAR-3"), or references a Jira issue key or URL and wants the work done.
+description: Read a Linear ticket, plan the implementation, build it, and test it end to end. Use when the user asks to implement, build, or work a Linear ticket (e.g. "implement FE-11", "/implement FE-12"), or references a Linear issue key or URL and wants the work done.
 disable-model-invocation: false
 ---
 
-# Implement a Jira ticket
+# Implement a Linear ticket
 
-Take a Jira ticket from key to a tested, PR-ready change. Read the ticket, plan, implement against this repo's conventions, verify, and open a PR. Do **not** change the ticket's status.
+Take a Linear ticket from key to a tested, PR-ready change. Read the ticket, plan, implement against this repo's conventions, verify, and open a PR. Do **not** change the ticket's status.
 
 ## Inputs
 
-Expect a Jira issue key (e.g. `MAR-6`) or a Jira URL. If none is given, ask for one before proceeding.
+Expect a Linear issue key (e.g. `FE-11`) or a Linear URL such as `https://linear.app/fe-demo/issue/FE-11/...`. If none is given, ask for one before proceeding.
+
+Feature work for this app lives in the Linear **FreshCart** project:
+
+https://linear.app/fe-demo/project/freshcart-536c4def58f4/overview
+
+- Team: Fe-demo (`FE`)
+- Project: FreshCart (`P-FE-1`)
+
+Do not read or implement a Jira / MAR ticket for this app. If the user names a Jira key, ask them for the Linear issue instead.
 
 ## Workflow
 
@@ -28,11 +37,12 @@ Copy this checklist and track progress with the todo tool:
 
 ### 1. Read the ticket
 
-Use the Atlassian MCP (`plugin-atlassian-atlassian`). This workspace's cloudId is
-`564eb250-21c1-45d7-81f9-527d6bf705ad` (fe-anysphere-demo.atlassian.net) and the app's project is `MAR` (JG-Marketplace).
+Use the Linear MCP. Discover the tool schema before calling it.
 
-- Call `getJiraIssue` for the key. Read summary, description, acceptance criteria, labels, and comments.
-- MAR tickets typically include a **Verification user flow** section — treat it as the test script for step 5.
+- Call `get_issue` with the issue identifier (e.g. `FE-11`). Read title, description, status, labels, priority, and project.
+- Call `list_comments` with `issueId` set to that identifier.
+- Confirm the issue is on team Fe-demo and project FreshCart. If it is not, stop and say so.
+- Tickets include a **Verification** section (sometimes titled Verification user flow). Treat it as the test script for step 5.
 - If the description references other issues, meetings, or docs, pull just enough context to act.
 - Restate the goal and the acceptance criteria in one short paragraph before planning.
 
@@ -72,7 +82,7 @@ cd frontend && npm run build        # canonical frontend gate (vite build)
 - Run `ReadLints` on edited files and fix introduced lints.
 - Start the app per the [start-native-local](../start-native-local/SKILL.md) skill (uvicorn on :8000, Vite on :5173) and confirm `curl -fsS http://127.0.0.1:8000/api/health` returns ok.
 - Exercise any new/changed endpoints directly with `curl` (success **and** error paths).
-- Walk the ticket's **Verification user flow** end to end in the running app and confirm each acceptance criterion.
+- Walk the ticket's **Verification** section end to end in the running app and confirm each acceptance criterion.
 - **If you added or changed an API endpoint**, update the matching QA-agent flow in `.github/qa-agents/` (add the touched paths and extend the `focus_prompt`) so the flow stays covered.
 - **Stripe caveat:** full checkout requires `STRIPE_SECRET_KEY` / `VITE_STRIPE_PUBLISHABLE_KEY` in `.env`. Without keys, verify up to session creation and say so in the PR — don't report an unverified checkout as tested.
 
@@ -84,11 +94,11 @@ If the change is user-visible (pages, nav, components, styling), the task is not
 
 Commit on the feature branch, push, and open a PR to `main` with `gh`:
 
-- Reference the ticket key in the PR title or body (e.g. `MAR-6`).
+- Reference the ticket key in the PR title or body (e.g. `FE-11`).
 - In the body, summarize the change, list how acceptance criteria are met, and note verification (`npm run build`, curl checks, user-flow walkthrough).
 - Report the PR URL to the user.
 
-**Do not transition or comment the ticket's status** — leave Jira status changes to the user.
+**Do not transition or comment the ticket's status** — leave Linear status changes to the user. Do not call `save_issue` to move state.
 
 ## Notes
 
