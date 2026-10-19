@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 import os
-from typing import List, Optional
+from typing import List, Literal, Optional
 import re
 
 import stripe
@@ -63,7 +63,7 @@ def _tokenize(text: str) -> List[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def _matches_partial_terms(product: Product, query: str) -> bool:
+def _matches_partial_terms(product: Product, query: str, match: str = "all") -> bool:
     query_terms = _tokenize(query)
     if not query_terms:
         return True
@@ -72,8 +72,12 @@ def _matches_partial_terms(product: Product, query: str) -> bool:
     if not product_terms:
         return False
 
-    # Every query term must be a direct substring of at least one product term.
-    return all(any(term in token for token in product_terms) for term in query_terms)
+    # A term hits when it is a substring of one name/description token ("apple" in "apples").
+    # match=all is typed search (every word). match=any is a category chip (alternative keywords).
+    hits = [any(term in token for token in product_terms) for term in query_terms]
+    if match == "any":
+        return any(hits)
+    return all(hits)
 
 
 def _require_store(store_id: str) -> str:
@@ -136,11 +140,12 @@ def list_products(
     store_id: str = Query(default=""),
     query: str = Query(default="", min_length=0),
     limit: int = Query(default=24, ge=1, le=60),
+    match: Literal["all", "any"] = Query(default="all"),
 ) -> dict:
     resolved_store = _require_store(store_id)
     products = get_store_products(resolved_store, limit=limit)
     if query.strip():
-        products = [p for p in products if _matches_partial_terms(p, query)]
+        products = [p for p in products if _matches_partial_terms(p, query, match=match)]
     return {"items": [asdict(p) for p in products], "count": len(products), "store_id": resolved_store}
 
 

@@ -29,6 +29,11 @@ const QUICK_FILTERS = [
   { label: "Bakery", query: "bread sourdough" },
   { label: "Protein", query: "chicken eggs" }
 ];
+
+function isCategoryChipQuery(search) {
+  const trimmed = search.trim();
+  return QUICK_FILTERS.some((filter) => filter.query === trimmed);
+}
 const CARTOON_AVATARS = ["🐼", "🦊", "🐸", "🐻", "🐯", "🐨", "🐵", "🐰"];
 
 function createEmptyProfile() {
@@ -302,7 +307,12 @@ export default function App() {
       const params = new URLSearchParams();
       params.set("store_id", storeId);
       if (search.trim()) {
-        params.set("query", search.trim());
+        const trimmed = search.trim();
+        params.set("query", trimmed);
+        // Chip phrases are alternative keywords. Typed search stays AND (match=all).
+        if (isCategoryChipQuery(trimmed)) {
+          params.set("match", "any");
+        }
       }
       const response = await fetch(`${API_BASE}/api/products?${params.toString()}`);
       if (!response.ok) {
