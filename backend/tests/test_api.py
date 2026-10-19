@@ -126,6 +126,76 @@ def test_product_search_with_no_match_is_empty(client):
     assert body == {"items": [], "count": 0, "store_id": store_id}
 
 
+def test_typed_search_requires_every_term(client):
+    body = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "brown eggs", "limit": 60},
+    ).json()
+    assert [item["id"] for item in body["items"]] == ["greenmart-grocery-4"]
+
+    produce = client.get(
+        "/api/products",
+        params={
+            "store_id": "greenmart",
+            "query": "apple banana avocado spinach strawberry",
+            "limit": 60,
+        },
+    ).json()
+    assert produce["items"] == []
+    assert produce["count"] == 0
+
+
+def test_category_chip_match_any_returns_alternatives(client):
+    produce = client.get(
+        "/api/products",
+        params={
+            "store_id": "greenmart",
+            "query": "apple banana avocado spinach strawberry",
+            "match": "any",
+            "limit": 60,
+        },
+    ).json()
+    assert [item["id"] for item in produce["items"]] == [
+        "greenmart-grocery-1",
+        "greenmart-grocery-2",
+        "greenmart-grocery-7",
+        "greenmart-grocery-8",
+    ]
+
+    dairy = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "milk yogurt eggs", "match": "any", "limit": 60},
+    ).json()
+    assert {item["id"] for item in dairy["items"]} == {
+        "greenmart-grocery-3",
+        "greenmart-grocery-4",
+        "greenmart-grocery-9",
+    }
+
+    protein = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "chicken eggs", "match": "any", "limit": 60},
+    ).json()
+    assert {item["id"] for item in protein["items"]} == {
+        "greenmart-grocery-4",
+        "greenmart-grocery-6",
+    }
+
+    protein_and = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "chicken eggs", "match": "all", "limit": 60},
+    ).json()
+    assert protein_and["items"] == []
+
+
+def test_product_search_rejects_unknown_match(client):
+    response = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "banana", "match": "or"},
+    )
+    assert response.status_code == 422
+
+
 def test_recommendations_follow_deal_rule(client):
     store_id = _store_id()
     catalog = client.get("/api/products", params={"store_id": store_id, "limit": 60}).json()["items"]
