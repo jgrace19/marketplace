@@ -10,6 +10,8 @@ set -u
 
 API="https://api.cursor.com/factory.v1.DeploymentsService"
 DEPLOY_SOURCE_URI="https://github.com/jgrace19/marketplace"
+# Secrets go to curl via stdin (-H @-) so they never appear in the process list.
+CURL_TIMEOUTS=(--connect-timeout 5 --max-time 15)
 
 report_rollouts_auth_failure() {
   message="$1"
@@ -39,8 +41,9 @@ rollouts_exchange() {
     return 0
   fi
   exchange_body="$(mktemp)"
-  exchange_status="$(curl -sS -o "$exchange_body" -w "%{http_code}" -X POST https://api2.cursor.sh/auth/exchange_user_api_key \
-    -H "Authorization: Bearer ${CURSOR_API_KEY}" -H "Content-Type: application/json" -d '{}')" || {
+  exchange_status="$(printf 'Authorization: Bearer %s\n' "$CURSOR_API_KEY" | \
+    curl -sS "${CURL_TIMEOUTS[@]}" -o "$exchange_body" -w "%{http_code}" -X POST https://api2.cursor.sh/auth/exchange_user_api_key \
+    -H @- -H "Content-Type: application/json" -d '{}')" || {
     echo "Rollouts reporter: Rollouts API unavailable, deploy not reported" >&2
     rollouts_halt
     return 0
@@ -75,8 +78,9 @@ rollouts_post() {
   body="$3"
   allow409="${4:-}"
   response="$(mktemp)"
-  status="$(curl -sS -o "$response" -w "%{http_code}" -X POST "$url" \
-    -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" \
+  status="$(printf 'Authorization: Bearer %s\n' "$TOKEN" | \
+    curl -sS "${CURL_TIMEOUTS[@]}" -o "$response" -w "%{http_code}" -X POST "$url" \
+    -H @- -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" \
     -d "$body")" || {
     echo "Rollouts reporter: ${call} failed before a response. The deploy continues." >&2
     rollouts_halt
