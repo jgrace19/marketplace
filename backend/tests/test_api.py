@@ -117,6 +117,39 @@ def test_product_search_matches_partial_terms(client):
     )
 
 
+_BANANAS = ("Organic Bananas (6 ct)", "Fresh organic bananas, perfect for smoothies and snacks.")
+_UNTOKENIZABLE = ("!!!", "")
+
+
+@pytest.mark.parametrize(
+    ("product_text", "query", "expected"),
+    [
+        (_BANANAS, "organic banana", True),
+        (_BANANAS, "banana organic", True),
+        (_BANANAS, "ORGANIC   smoothie", True),
+        (_BANANAS, "bananas (6 ct)", True),
+        (_BANANAS, "ban ana", True),
+        (_BANANAS, "organic milk", False),
+        (_BANANAS, "", True),
+        (_BANANAS, "   ", True),
+        (_BANANAS, "!!! ---", True),
+        (_UNTOKENIZABLE, "a", False),
+        (_UNTOKENIZABLE, "", True),
+    ],
+)
+def test_matches_partial_terms_requires_every_term(product_text, query, expected):
+    name, description = product_text
+    product = main.Product(
+        id="sku-1",
+        name=name,
+        description=description,
+        price=3.49,
+        image_url="",
+        source="grocery-fallback",
+    )
+    assert main._matches_partial_terms(product, query) is expected
+
+
 def test_product_search_with_no_match_is_empty(client):
     store_id = _store_id()
     body = client.get(
