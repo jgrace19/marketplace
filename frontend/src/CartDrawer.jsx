@@ -14,10 +14,14 @@ export default function CartDrawer({
   subtotal,
   otherCarts,
   checkoutLoading,
+  savedCartsEnabled = false,
+  saveLoading = false,
+  notice = "",
   onClose,
   onIncrease,
   onDecrease,
   onCheckout,
+  onSaveForLater,
   onSwitchCart
 }) {
   const fulfillment = supportsPickup
@@ -88,15 +92,28 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
+          {notice ? <p className="error">{notice}</p> : null}
           <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
-          <button
-            type="button"
-            className="checkoutBtn"
-            onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
-          >
-            {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
-          </button>
+          <div className={savedCartsEnabled && items.length > 0 ? "cartDrawerActions" : undefined}>
+            {savedCartsEnabled && items.length > 0 ? (
+              <button
+                type="button"
+                className="secondaryBtn"
+                onClick={onSaveForLater}
+                disabled={saveLoading || checkoutLoading}
+              >
+                {saveLoading ? "Saving..." : "Save for later"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="checkoutBtn"
+              onClick={onCheckout}
+              disabled={checkoutLoading || items.length === 0}
+            >
+              {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
+            </button>
+          </div>
         </footer>
       </aside>
     </div>

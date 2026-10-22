@@ -618,6 +618,52 @@ body {
   background: #fff;
 }
 
+.cartDrawerActions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.cartDrawerActions .checkoutBtn,
+.cartDrawerActions .secondaryBtn {
+  width: auto;
+  flex: 1;
+}
+
+.savedCartsSection {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeeea;
+}
+
+.savedCartsSection h3 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.savedCartsNotice {
+  margin: 0 0 12px;
+  color: #295295;
+  font-size: 0.88rem;
+}
+
+.savedCartsExpiry {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #4f4f4f;
+}
+
+.savedCartsActions {
+  display: flex;
+  gap: 8px;
+}
+
+.savedCartsActions .checkoutBtn,
+.savedCartsActions .secondaryBtn {
+  margin-top: 0;
+  padding: 10px 12px;
+}
+
 .checkoutBtn {
   margin-top: 10px;
   width: 100%;

@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import {
+  SAVED_CARTS_ENABLED,
+  deleteSavedCart,
+  listSavedCarts,
+  mergeRestoredItems,
+  normalizeSavedCartList,
+  restoreSavedCart,
+  saveCart,
+  skippedItemsNotice
+} from "./savedCartsApi";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -167,6 +177,11 @@ export default function App() {
     type: "idle",
     message: ""
   });
+  const [savedCarts, setSavedCarts] = useState([]);
+  const [savedCartsLoading, setSavedCartsLoading] = useState(false);
+  const [savedCartsNotice, setSavedCartsNotice] = useState("");
+  const [saveCartLoading, setSaveCartLoading] = useState(false);
+  const [savedCartBusyId, setSavedCartBusyId] = useState("");
   const [profile, setProfile] = useState(createEmptyProfile());
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
@@ -359,6 +374,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!SAVED_CARTS_ENABLED || cartPanel !== "hub") {
+      return;
+    }
+    refreshSavedCarts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartPanel]);
+
+  useEffect(() => {
     if (selectedStore?.id && activePage === "shop") {
       setProducts([]);
       loadProducts("", selectedStore.id);
@@ -474,6 +497,21 @@ export default function App() {
     return hubCarts.filter((cart) => cart.storeId !== activeStoreId);
   }, [hubCarts, activeStoreId]);
 
+  const hubSavedCarts = useMemo(() => {
+    return savedCarts.map((cart) => {
+      const store = stores.find((entry) => entry.id === cart.store_id);
+      return {
+        id: cart.id,
+        storeId: cart.store_id,
+        storeName: cart.name || store?.name || cart.store_id,
+        logoUrl: store?.logo_url || "",
+        itemCount: cart.item_count ?? (cart.items || []).length,
+        subtotal: cart.subtotal ?? 0,
+        expiresAt: cart.expires_at
+      };
+    });
+  }, [savedCarts, stores]);
+
   function pruneCartsToStores(storeList) {
     const availableIds = new Set(storeList.map((store) => store.id));
     setCarts((prev) => {
@@ -496,6 +534,130 @@ export default function App() {
       delete next[storeId];
       return next;
     });
+  }
+
+  async function refreshSavedCarts() {
+    if (!SAVED_CARTS_ENABLED) {
+      return;
+    }
+    setSavedCartsLoading(true);
+    try {
+      const payload = await listSavedCarts();
+      setSavedCarts(normalizeSavedCartList(payload));
+    } catch (err) {
+      setSavedCartsNotice(err.message || "Unable to load saved carts.");
+    } finally {
+      setSavedCartsLoading(false);
+    }
+  }
+
+  async function handleSaveForLater() {
+    if (!SAVED_CARTS_ENABLED || !activeStoreId || cartItems.length === 0) {
+      return;
+    }
+    setSaveCartLoading(true);
+    setSavedCartsNotice("");
+    setError("");
+    try {
+      await saveCart({
+        storeId: activeStoreId,
+        items: cartItems,
+        name: selectedStore?.name || activeStoreId
+      });
+      clearStoreCart(activeStoreId);
+      setSavedCartsNotice("Cart saved for later.");
+      setCartPanel("hub");
+      await refreshSavedCarts();
+    } catch (err) {
+      setError(err.message || "Unable to save cart.");
+    } finally {
+      setSaveCartLoading(false);
+    }
+  }
+
+  async function enrichRestoredCatalog(storeId, items) {
+    const snapshots = {};
+    for (const item of items || []) {
+      const productId = item.product_id || item.id;
+      if (!productId) {
+        continue;
+      }
+      const existing = cartCatalog[productId] || productCatalog[productId];
+      if (item.name || existing) {
+        snapshots[productId] = snapshotProduct({
+          id: productId,
+          name: item.name || existing?.name || productId,
+          price: item.price ?? item.unit_price ?? existing?.price ?? 0,
+          image_url: item.image_url || existing?.image_url || "",
+          store_id: storeId,
+          description: item.description || existing?.description || ""
+        });
+      }
+    }
+    const missing = (items || [])
+      .map((item) => item.product_id || item.id)
+      .filter((productId) => productId && !snapshots[productId]);
+    if (missing.length) {
+      try {
+        const params = new URLSearchParams({ store_id: storeId });
+        const response = await fetch(`${API_BASE}/api/products?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          for (const product of data.items || []) {
+            snapshots[product.id] = snapshotProduct(product);
+          }
+        }
+      } catch {
+        // Quantities still restore even if catalog lookup fails.
+      }
+    }
+    if (Object.keys(snapshots).length) {
+      setCartCatalog((prev) => ({ ...prev, ...snapshots }));
+      setProductCatalog((prev) => ({ ...prev, ...snapshots }));
+    }
+  }
+
+  async function handleRestoreSavedCart(savedCartId) {
+    if (!SAVED_CARTS_ENABLED || !savedCartId) {
+      return;
+    }
+    setSavedCartBusyId(savedCartId);
+    setSavedCartsNotice("");
+    try {
+      const result = await restoreSavedCart(savedCartId);
+      const storeId = result.store_id;
+      const items = result.items || [];
+      if (!storeId) {
+        throw new Error("Restore did not include a store.");
+      }
+      await enrichRestoredCatalog(storeId, items);
+      setCarts((prev) => ({
+        ...prev,
+        [storeId]: mergeRestoredItems(prev[storeId] || {}, items)
+      }));
+      setSavedCartsNotice(skippedItemsNotice(result.skipped) || "Cart restored.");
+      await refreshSavedCarts();
+    } catch (err) {
+      setSavedCartsNotice(err.message || "Unable to restore cart.");
+    } finally {
+      setSavedCartBusyId("");
+    }
+  }
+
+  async function handleDeleteSavedCart(savedCartId) {
+    if (!SAVED_CARTS_ENABLED || !savedCartId) {
+      return;
+    }
+    setSavedCartBusyId(savedCartId);
+    setSavedCartsNotice("");
+    try {
+      await deleteSavedCart(savedCartId);
+      setSavedCarts((prev) => prev.filter((cart) => cart.id !== savedCartId));
+    } catch (err) {
+      setSavedCartsNotice(err.message || "Unable to delete saved cart.");
+    } finally {
+      setSavedCartBusyId("");
+    }
   }
 
   function addToCart(product) {
@@ -1170,9 +1332,16 @@ export default function App() {
         <CartsHub
           zip={zipDisplay}
           carts={hubCarts}
+          savedCartsEnabled={SAVED_CARTS_ENABLED}
+          savedCarts={hubSavedCarts}
+          savedCartsLoading={savedCartsLoading}
+          savedCartsNotice={savedCartsNotice}
+          savedCartBusyId={savedCartBusyId}
           onClose={closeCartPanel}
           onContinueShopping={continueShoppingFromHub}
           onDeleteCart={clearStoreCart}
+          onRestoreSavedCart={handleRestoreSavedCart}
+          onDeleteSavedCart={handleDeleteSavedCart}
           onBrowseStores={() => {
             closeCartPanel();
             setActivePage("stores");
@@ -1190,10 +1359,14 @@ export default function App() {
           subtotal={cartTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
+          savedCartsEnabled={SAVED_CARTS_ENABLED}
+          saveLoading={saveCartLoading}
+          notice={error}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
           onCheckout={startCheckout}
+          onSaveForLater={handleSaveForLater}
           onSwitchCart={switchDrawerCart}
         />
       ) : null}

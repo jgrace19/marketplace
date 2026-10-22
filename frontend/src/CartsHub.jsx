@@ -5,13 +5,35 @@ function currency(value) {
   }).format(value || 0);
 }
 
+function formatExpiry(iso) {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+}
+
 export default function CartsHub({
   zip,
   carts,
+  savedCartsEnabled = false,
+  savedCarts = [],
+  savedCartsLoading = false,
+  savedCartsNotice = "",
+  savedCartBusyId = "",
   onClose,
   onContinueShopping,
   onDeleteCart,
-  onBrowseStores
+  onBrowseStores,
+  onRestoreSavedCart,
+  onDeleteSavedCart
 }) {
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label="Carts">
@@ -82,6 +104,64 @@ export default function CartsHub({
             ))}
           </ul>
         )}
+
+        {savedCartsEnabled ? (
+          <section className="savedCartsSection" aria-label="Saved for later">
+            <h3>Saved for later</h3>
+            {savedCartsNotice ? <p className="savedCartsNotice">{savedCartsNotice}</p> : null}
+            {savedCartsLoading ? <p className="status">Loading saved carts...</p> : null}
+            {!savedCartsLoading && savedCarts.length === 0 ? (
+              <p className="cartsHubEmpty">Nothing saved yet.</p>
+            ) : null}
+            {!savedCartsLoading && savedCarts.length > 0 ? (
+              <ul className="cartsHubList">
+                {savedCarts.map((cart) => {
+                  const busy = savedCartBusyId === cart.id;
+                  const expiry = formatExpiry(cart.expiresAt);
+                  return (
+                    <li key={cart.id} className="cartsHubCard">
+                      <div className="cartsHubCardTop">
+                        {cart.logoUrl ? (
+                          <img src={cart.logoUrl} alt="" className="cartsHubLogo" />
+                        ) : (
+                          <div className="cartsHubLogoPlaceholder" />
+                        )}
+                        <div className="cartsHubCardMeta">
+                          <h3>{cart.storeName}</h3>
+                          <p className="cartsHubPersonal">Saved cart</p>
+                          <p className="cartsHubCount">
+                            {cart.itemCount} item{cart.itemCount === 1 ? "" : "s"}
+                            {cart.subtotal > 0 ? ` · ${currency(cart.subtotal)}` : ""}
+                          </p>
+                          {expiry ? <p className="savedCartsExpiry">Expires {expiry}</p> : null}
+                        </div>
+                      </div>
+                      <div className="savedCartsActions">
+                        <button
+                          type="button"
+                          className="checkoutBtn"
+                          onClick={() => onRestoreSavedCart(cart.id)}
+                          disabled={busy}
+                        >
+                          {busy ? "Working..." : "Restore"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryBtn"
+                          onClick={() => onDeleteSavedCart(cart.id)}
+                          disabled={busy}
+                          aria-label={`Delete saved ${cart.storeName} cart`}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
       </div>
     </div>
   );
