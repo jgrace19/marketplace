@@ -11,6 +11,16 @@ def _stripe_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main.stripe, "api_key", None, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _reset_checkout_metrics():
+    """Checkout counters are process-global; isolate each test."""
+    import metrics
+
+    metrics.reset()
+    yield
+    metrics.reset()
+
+
 @pytest.fixture
 def client() -> TestClient:
     with TestClient(main.app) as test_client:
