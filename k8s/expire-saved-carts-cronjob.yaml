@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: expire-saved-carts
+  namespace: marketplace
+  labels:
+    app: expire-saved-carts
+    tags.datadoghq.com/env: local
+    tags.datadoghq.com/service: expire-saved-carts
+    tags.datadoghq.com/version: "1.0.0"
+spec:
+  schedule: "30 7 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: expire-saved-carts
+            tags.datadoghq.com/env: local
+            tags.datadoghq.com/service: expire-saved-carts
+            tags.datadoghq.com/version: "1.0.0"
+          annotations:
+            ad.datadoghq.com/expire-saved-carts.logs: '[{"source":"python","service":"expire-saved-carts"}]'
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: expire-saved-carts
+              image: marketplace-backend:latest
+              imagePullPolicy: IfNotPresent
+              command: ["python", "-m", "jobs.expire_saved_carts"]
+              env:
+                - name: SAVED_CARTS_ENABLED
+                  value: "false"
+                - name: SAVED_CART_TTL_DAYS
+                  value: "30"
+                - name: DATABASE_URL
+                  value: "sqlite:///./freshcart.db"
+                - name: DD_ENV
+                  value: local
+                - name: DD_SERVICE
+                  value: expire-saved-carts
+                - name: DD_VERSION
+                  value: "1.0.0"
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "128Mi"

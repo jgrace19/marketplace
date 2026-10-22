@@ -58,6 +58,7 @@ kubectl create secret generic app-secrets -n marketplace \
 kubectl apply -f "$K8S_DIR/backend.yaml"
 kubectl apply -f "$K8S_DIR/frontend.yaml"
 kubectl apply -f "$K8S_DIR/backend-hpa.yaml"
+kubectl apply -f "$K8S_DIR/expire-saved-carts-cronjob.yaml"
 
 echo "==> Waiting for rollouts"
 kubectl -n marketplace rollout status deployment/backend --timeout=120s
