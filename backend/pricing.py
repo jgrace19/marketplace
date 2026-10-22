@@ -15,15 +15,10 @@ def unit_amount_cents(price: float) -> int:
 
 
 def line_subtotal_cents(price: float, quantity: int) -> int:
-    """Priced amount for a catalog line.
-
-    Pick quantity is reported separately for fulfillment. The amount charged
-    and booked to GMV is the catalog unit price, the same figure sent to
-    Stripe as ``unit_amount``.
-    """
+    """Extended line amount in cents (unit price × pick quantity)."""
     if quantity < 1:
         raise ValueError("quantity must be at least 1")
-    return unit_amount_cents(price)
+    return unit_amount_cents(price) * quantity
 
 
 def order_totals(items: list) -> dict:
