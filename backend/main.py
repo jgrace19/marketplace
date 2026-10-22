@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import json
+import logging
 import os
 from typing import List, Optional
 import re
+import uuid
 
 import stripe
 from dotenv import load_dotenv
@@ -11,6 +14,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+import metrics
+from pricing import order_totals
 from stores import (
     get_products_for_store,
     get_store,
@@ -19,6 +24,7 @@ from stores import (
 
 
 load_dotenv()
+logger = logging.getLogger("freshcart.checkout")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173,http://127.0.0.1:5173,"
@@ -99,6 +105,40 @@ class CheckoutRequest(BaseModel):
     store_name: Optional[str] = None
 
 
+def checkout_mode() -> str:
+    """Stripe when a secret is configured, otherwise a local mock settlement."""
+    if os.getenv("STRIPE_SECRET_KEY", "").strip():
+        return "stripe"
+    return "mock"
+
+
+def _order_totals_or_400(items: list) -> dict:
+    try:
+        return order_totals(items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _book_checkout(totals: dict) -> None:
+    metrics.record_checkout(totals["units"], totals["subtotal_cents"])
+    # One completed checkout. Per-order GMV and AOV are this order's subtotal;
+    # the running mean lives on GET /api/metrics.
+    logger.info(
+        "%s",
+        json.dumps(
+            {
+                "event": "checkout.completed",
+                "metrics": {
+                    metrics.ORDERS: 1,
+                    metrics.UNITS: totals["units"],
+                    metrics.GMV_CENTS: totals["subtotal_cents"],
+                    metrics.AOV_CENTS: totals["subtotal_cents"],
+                },
+            }
+        ),
+    )
+
+
 def configure_stripe() -> None:
     secret_key = os.getenv("STRIPE_SECRET_KEY", "").strip()
     if not secret_key:
@@ -160,6 +200,54 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
         "items": [asdict(p) for p in discounted],
         "store_id": resolved_store,
     }
+
+
+@app.get("/api/checkout/mode")
+def get_checkout_mode() -> dict:
+    return {"checkout_mode": checkout_mode()}
+
+
+@app.post("/api/cart/quote")
+def quote_cart(payload: CheckoutRequest) -> dict:
+    """Price a cart with the same totals mock checkout books to GMV."""
+    totals = _order_totals_or_400(payload.items)
+    return {"currency": "usd", **totals}
+
+
+@app.post("/api/orders")
+def create_mock_order(payload: CheckoutRequest) -> dict:
+    """Settle a cart without Stripe and record checkout metrics.
+
+    Used when no ``STRIPE_SECRET_KEY`` is configured (local and preview).
+    """
+    totals = _order_totals_or_400(payload.items)
+    _book_checkout(totals)
+    return {
+        "order_id": f"ord_{uuid.uuid4().hex[:12]}",
+        "payment_status": "paid",
+        "checkout_mode": "mock",
+        "currency": "usd",
+        "store_id": payload.store_id or "",
+        "store_name": payload.store_name or "",
+        **totals,
+    }
+
+
+@app.get("/api/metrics")
+def get_metrics() -> dict:
+    return {"metrics": metrics.snapshot()}
+
+
+@app.post("/api/metrics/reset")
+def reset_metrics() -> dict:
+    """Clear in-process counters. Disabled once a real Stripe key is set."""
+    if checkout_mode() == "stripe":
+        raise HTTPException(
+            status_code=403,
+            detail="Metrics reset is disabled when Stripe is configured.",
+        )
+    metrics.reset()
+    return {"metrics": metrics.snapshot()}
 
 
 @app.post("/api/checkout/session")

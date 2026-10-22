@@ -118,6 +118,20 @@ function buildCartItems(cartMap, cartCatalog, productCatalog) {
     .filter(Boolean);
 }
 
+function toCheckoutItems(items) {
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    price: item.price,
+    quantity: item.quantity,
+    image_url: item.image_url || ""
+  }));
+}
+
+function localSubtotal(items) {
+  return items.reduce((sum, item) => sum + (item?.price || 0) * item.quantity, 0);
+}
+
 function pruneCartCatalog(carts, catalog) {
   const keptIds = new Set();
   for (const cart of Object.values(carts)) {
@@ -439,10 +453,89 @@ export default function App() {
     [activeCart, cartCatalog, productCatalog]
   );
 
-  const cartTotal = useMemo(
-    () => cartItems.reduce((sum, item) => sum + (item?.price || 0) * item.quantity, 0),
-    [cartItems]
-  );
+  const localCartTotal = useMemo(() => localSubtotal(cartItems), [cartItems]);
+  const [serverSubtotals, setServerSubtotals] = useState({});
+
+  const quoteSignature = useMemo(() => {
+    return Object.entries(carts)
+      .map(([storeId, cart]) => {
+        const items = buildCartItems(cart, cartCatalog, productCatalog);
+        if (items.length === 0) {
+          return "";
+        }
+        const lines = items
+          .map((item) => `${item.id}:${item.quantity}:${item.price}`)
+          .sort()
+          .join(",");
+        return `${storeId}|${lines}`;
+      })
+      .filter(Boolean)
+      .sort()
+      .join("||");
+  }, [carts, cartCatalog, productCatalog]);
+
+  useEffect(() => {
+    const groups = Object.entries(carts)
+      .map(([storeId, cart]) => ({
+        storeId,
+        items: buildCartItems(cart, cartCatalog, productCatalog)
+      }))
+      .filter((group) => group.items.length > 0);
+
+    if (groups.length === 0) {
+      setServerSubtotals({});
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    async function loadQuotes() {
+      const next = {};
+      await Promise.all(
+        groups.map(async (group) => {
+          const response = await fetch(`${API_BASE}/api/cart/quote`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: toCheckoutItems(group.items) }),
+            signal: controller.signal
+          });
+          if (!response.ok) {
+            throw new Error("Unable to quote cart.");
+          }
+          const data = await response.json();
+          next[group.storeId] = data.subtotal;
+        })
+      );
+      if (cancelled) {
+        return;
+      }
+      setServerSubtotals((prev) => {
+        const keys = Object.keys(next);
+        const prevKeys = Object.keys(prev);
+        if (keys.length === prevKeys.length && keys.every((key) => prev[key] === next[key])) {
+          return prev;
+        }
+        return next;
+      });
+    }
+
+    loadQuotes().catch((err) => {
+      if (cancelled || err?.name === "AbortError") {
+        return;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [quoteSignature, carts, cartCatalog, productCatalog]);
+
+  const cartTotal =
+    activeStoreId && Object.prototype.hasOwnProperty.call(serverSubtotals, activeStoreId)
+      ? serverSubtotals[activeStoreId]
+      : localCartTotal;
 
   const cartCount = useMemo(
     () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
@@ -455,20 +548,23 @@ export default function App() {
       .map(([storeId, cart]) => {
         const store = stores.find((entry) => entry.id === storeId);
         const items = buildCartItems(cart, cartCatalog, productCatalog);
+        const quoted = Object.prototype.hasOwnProperty.call(serverSubtotals, storeId)
+          ? serverSubtotals[storeId]
+          : localSubtotal(items);
         return {
           storeId,
           storeName: store?.name || storeId,
           logoUrl: store?.logo_url || "",
           etaLabel: store?.eta_label || "",
           itemCount: countItems(cart),
-          subtotal: items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0),
+          subtotal: quoted,
           thumbnails: items
             .map((item) => item.image_url)
             .filter(Boolean)
             .slice(0, 4)
         };
       });
-  }, [carts, stores, cartCatalog, productCatalog]);
+  }, [carts, stores, cartCatalog, productCatalog, serverSubtotals]);
 
   const otherOpenCarts = useMemo(() => {
     return hubCarts.filter((cart) => cart.storeId !== activeStoreId);
@@ -644,24 +740,47 @@ export default function App() {
     setError("");
     setCheckoutState({
       type: "info",
-      message: "Redirecting to Stripe Checkout..."
+      message: "Starting checkout..."
     });
+    const payload = {
+      items: toCheckoutItems(cartItems),
+      store_id: activeStoreId,
+      store_name: selectedStore?.name || activeStoreId
+    };
     try {
+      const modeResponse = await fetch(`${API_BASE}/api/checkout/mode`);
+      const modeBody = await modeResponse.json();
+      if (!modeResponse.ok) {
+        throw new Error(modeBody.detail || "Unable to determine checkout mode.");
+      }
+      if (modeBody.checkout_mode === "mock") {
+        const response = await fetch(`${API_BASE}/api/orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Checkout failed.");
+        }
+        clearStoreCart(activeStoreId);
+        closeCartPanel();
+        setCheckoutState({
+          type: "success",
+          message: `Order placed. Charged ${currency(data.subtotal)}.`
+        });
+        return;
+      }
+
+      setCheckoutState({
+        type: "info",
+        message: "Redirecting to Stripe Checkout..."
+      });
       window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image_url: item.image_url
-          })),
-          store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
-        })
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (!response.ok) {

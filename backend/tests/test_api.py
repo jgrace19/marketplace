@@ -342,6 +342,95 @@ def test_session_status_handles_missing_customer_and_metadata(client, monkeypatc
     assert body["store_name"] == ""
 
 
+def test_checkout_mode_is_mock_without_stripe_key(client):
+    assert client.get("/api/checkout/mode").json() == {"checkout_mode": "mock"}
+
+
+def test_checkout_mode_is_stripe_when_key_present(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    assert client.get("/api/checkout/mode").json() == {"checkout_mode": "stripe"}
+
+
+def test_quote_sums_unit_prices(client):
+    payload = {
+        "items": [
+            _sample_item(price=3.49, quantity=1),
+            _sample_item(id="sku-2", name="Milk", price=4.29, quantity=1),
+        ]
+    }
+    body = client.post("/api/cart/quote", json=payload).json()
+    assert body["currency"] == "usd"
+    assert body["units"] == 2
+    assert body["subtotal_cents"] == 349 + 429
+    assert body["subtotal"] == 7.78
+
+
+def test_quote_rejects_sub_cent_price(client):
+    response = client.post("/api/cart/quote", json={"items": [_sample_item(price=0.001, quantity=1)]})
+    assert response.status_code == 400
+    assert "one cent" in response.json()["detail"]
+
+
+def test_metrics_start_at_zero(client):
+    assert client.get("/api/metrics").json()["metrics"] == {
+        "freshcart.checkout.orders": 0,
+        "freshcart.checkout.units": 0,
+        "freshcart.checkout.gmv_cents": 0,
+        "freshcart.checkout.average_order_value_cents": 0,
+    }
+
+
+def test_mock_order_records_checkout_metrics(client):
+    payload = {
+        "items": [_sample_item(price=2.50, quantity=1)],
+        "store_id": "greenmart",
+        "store_name": "GreenMart",
+    }
+    first = client.post("/api/orders", json=payload)
+    assert first.status_code == 200
+    body = first.json()
+    assert body["payment_status"] == "paid"
+    assert body["checkout_mode"] == "mock"
+    assert body["store_id"] == "greenmart"
+    assert body["subtotal_cents"] == 250
+    assert body["units"] == 1
+    assert body["order_id"].startswith("ord_")
+
+    assert client.post("/api/orders", json=payload).status_code == 200
+    metrics = client.get("/api/metrics").json()["metrics"]
+    assert metrics == {
+        "freshcart.checkout.orders": 2,
+        "freshcart.checkout.units": 2,
+        "freshcart.checkout.gmv_cents": 500,
+        "freshcart.checkout.average_order_value_cents": 250,
+    }
+
+
+def test_mock_order_counts_pick_quantity(client):
+    payload = {"items": [_sample_item(price=3.49, quantity=3)]}
+    body = client.post("/api/orders", json=payload).json()
+    assert body["units"] == 3
+    metrics = client.get("/api/metrics").json()["metrics"]
+    assert metrics["freshcart.checkout.orders"] == 1
+    assert metrics["freshcart.checkout.units"] == 3
+
+
+def test_metrics_reset_clears_counters(client):
+    assert client.post("/api/orders", json={"items": [_sample_item(price=1.00, quantity=1)]}).status_code == 200
+    reset = client.post("/api/metrics/reset")
+    assert reset.status_code == 200
+    assert reset.json()["metrics"]["freshcart.checkout.orders"] == 0
+    assert reset.json()["metrics"]["freshcart.checkout.gmv_cents"] == 0
+    assert client.get("/api/metrics").json()["metrics"]["freshcart.checkout.orders"] == 0
+
+
+def test_metrics_reset_refuses_when_stripe_configured(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    response = client.post("/api/metrics/reset")
+    assert response.status_code == 403
+    assert "Stripe" in response.json()["detail"]
+
+
 def test_session_status_stripe_error_is_not_found(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
 
