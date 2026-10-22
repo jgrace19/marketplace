@@ -11,11 +11,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from saved_carts import router as saved_carts_router
 from stores import (
     get_products_for_store,
-    get_store,
     get_stores_for_zip,
 )
+from validation import require_store as _require_store
 
 
 load_dotenv()
@@ -76,15 +77,6 @@ def _matches_partial_terms(product: Product, query: str) -> bool:
     return all(any(term in token for token in product_terms) for term in query_terms)
 
 
-def _require_store(store_id: str) -> str:
-    cleaned = (store_id or "").strip()
-    if not cleaned:
-        raise HTTPException(status_code=400, detail="store_id is required.")
-    if get_store(cleaned) is None:
-        raise HTTPException(status_code=404, detail=f"Unknown store_id '{cleaned}'.")
-    return cleaned
-
-
 class CheckoutItem(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
@@ -118,6 +110,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(saved_carts_router)
 
 
 @app.get("/api/health")
