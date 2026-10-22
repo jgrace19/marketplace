@@ -18,6 +18,11 @@ export interface RouterDecision {
   reason: string;
 }
 
+export interface RouterResult {
+  decisions: RouterDecision[];
+  rawOutput: string;
+}
+
 export interface RouterArgs {
   apiKey: string;
   changedFiles: string[];
@@ -32,16 +37,21 @@ export interface RouterArgs {
  * reported as skipped with the parse error in `reason` so the PR comment
  * surfaces what happened.
  */
-export async function runRouter(args: RouterArgs): Promise<RouterDecision[]> {
+export async function runRouter(args: RouterArgs): Promise<RouterResult> {
   const { apiKey, changedFiles, diffSummary, configs } = args;
 
-  if (configs.length === 0) return [];
+  if (configs.length === 0) {
+    return { decisions: [], rawOutput: "" };
+  }
   if (changedFiles.length === 0) {
-    return configs.map((cfg) => ({
-      id: cfg.id,
-      dispatch: false,
-      reason: "PR introduces no file changes; nothing to probe.",
-    }));
+    return {
+      decisions: configs.map((cfg) => ({
+        id: cfg.id,
+        dispatch: false,
+        reason: "PR introduces no file changes; nothing to probe.",
+      })),
+      rawOutput: "",
+    };
   }
 
   const prompt = buildRouterPrompt(changedFiles, diffSummary, configs);
@@ -54,44 +64,63 @@ export async function runRouter(args: RouterArgs): Promise<RouterDecision[]> {
     });
     raw = result.result ?? "";
   } catch (err) {
-    return configs.map((cfg) => ({
-      id: cfg.id,
-      dispatch: false,
-      reason: `Router agent failed to start: ${(err as Error).message}`,
-    }));
+    return {
+      decisions: configs.map((cfg) => ({
+        id: cfg.id,
+        dispatch: false,
+        reason: `Router agent failed to start: ${(err as Error).message}`,
+      })),
+      rawOutput: "",
+    };
   }
+
+  // Always echo the raw router output (truncated) so future debugging doesn't
+  // require an artifact download — this used to be silent on parse failures.
+  const preview = raw.slice(0, 600).replace(/\s+/g, " ");
+  console.log(
+    `Router raw output (${raw.length} chars): ${preview}${raw.length > 600 ? "…" : ""}`,
+  );
 
   const json = extractJsonObject(raw);
   if (!json) {
-    return configs.map((cfg) => ({
-      id: cfg.id,
-      dispatch: false,
-      reason: "Router returned no parseable JSON; defaulting to skip.",
-    }));
+    return {
+      decisions: configs.map((cfg) => ({
+        id: cfg.id,
+        dispatch: false,
+        reason: "Router returned no parseable JSON; defaulting to skip.",
+      })),
+      rawOutput: raw,
+    };
   }
 
   const parsed = RouterDecisionSchema.safeParse(json);
   if (!parsed.success) {
-    return configs.map((cfg) => ({
-      id: cfg.id,
-      dispatch: false,
-      reason: `Router JSON failed schema check: ${parsed.error.message}`,
-    }));
+    return {
+      decisions: configs.map((cfg) => ({
+        id: cfg.id,
+        dispatch: false,
+        reason: `Router JSON failed schema check: ${parsed.error.message}`,
+      })),
+      rawOutput: raw,
+    };
   }
 
   // Make sure every config has a decision; default unmatched configs to skip.
   const byId = new Map(parsed.data.decisions.map((d) => [d.id, d]));
-  return configs.map((cfg) => {
-    const decision = byId.get(cfg.id);
-    if (!decision) {
-      return {
-        id: cfg.id,
-        dispatch: false,
-        reason: "Router did not return a decision for this flow; skipping.",
-      };
-    }
-    return decision;
-  });
+  return {
+    decisions: configs.map((cfg) => {
+      const decision = byId.get(cfg.id);
+      if (!decision) {
+        return {
+          id: cfg.id,
+          dispatch: false,
+          reason: "Router did not return a decision for this flow; skipping.",
+        };
+      }
+      return decision;
+    }),
+    rawOutput: raw,
+  };
 }
 
 function buildRouterPrompt(
@@ -131,9 +160,13 @@ function buildRouterPrompt(
   ].join("\n");
 }
 
+const FENCE_RE = /```(?:json)?\s*\n([\s\S]*?)```/gi;
+
 /**
- * Be tolerant: accept either pure JSON or a JSON object embedded in markdown
- * (code fences, prose, etc.). We grab the first balanced top-level object.
+ * Be tolerant: accept pure JSON, JSON wrapped in ```json fences, or a JSON
+ * object embedded in surrounding prose. We try the cheapest form first, then
+ * any fenced block (last fence wins, since models often summarize before the
+ * final answer), then a brace-balanced scan over the whole text.
  */
 function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
@@ -142,7 +175,20 @@ function extractJsonObject(text: string): unknown {
   try {
     return JSON.parse(trimmed);
   } catch {
-    // fall through to bracket scan
+    // fall through
+  }
+
+  const fences: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = FENCE_RE.exec(trimmed)) !== null) {
+    fences.push(match[1]);
+  }
+  for (let i = fences.length - 1; i >= 0; i -= 1) {
+    try {
+      return JSON.parse(fences[i]);
+    } catch {
+      // try next fence / fall through
+    }
   }
 
   let depth = 0;
