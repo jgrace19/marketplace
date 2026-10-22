@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "frontend/src/OrdersPage.jsx"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -31,6 +32,12 @@ focus_prompt: |
     backend session-status endpoint reports `payment_status === "paid"`. If the
     notice appears under any other payment_status, file a bug. Only the
     checked-out store's cart should clear; other store carts remain.
+  - A successful paid checkout MUST create exactly one order in localStorage
+    (`freshcart-orders`), keyed by Stripe `session_id`. Reloading the success
+    URL / double-running verification must not duplicate the order. The Orders
+    page lists store, date, total, and status; opening the order shows the
+    purchased line items and a live stepper (Placed → Shopping → On the way →
+    Delivered) that advances on a timer without reload.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
