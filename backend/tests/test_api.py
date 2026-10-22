@@ -408,11 +408,30 @@ def test_mock_order_records_checkout_metrics(client):
 
 def test_mock_order_counts_pick_quantity(client):
     payload = {"items": [_sample_item(price=3.49, quantity=3)]}
+    quote = client.post("/api/cart/quote", json=payload).json()
+    assert quote["subtotal_cents"] == 1047
     body = client.post("/api/orders", json=payload).json()
     assert body["units"] == 3
+    assert body["subtotal_cents"] == 1047
     metrics = client.get("/api/metrics").json()["metrics"]
     assert metrics["freshcart.checkout.orders"] == 1
     assert metrics["freshcart.checkout.units"] == 3
+    assert metrics["freshcart.checkout.gmv_cents"] == 1047
+    assert metrics["freshcart.checkout.average_order_value_cents"] == 1047
+
+
+def test_quote_extends_line_by_pick_quantity(client):
+    payload = {
+        "items": [
+            _sample_item(id="greenmart-grocery-1", name="Organic Bananas", price=3.49, quantity=3),
+            _sample_item(id="greenmart-grocery-3", name="2% Milk", price=4.29, quantity=2),
+            _sample_item(id="greenmart-grocery-6", name="Chicken Breast", price=11.79, quantity=1),
+            _sample_item(id="greenmart-grocery-7", name="Baby Spinach", price=3.99, quantity=1),
+        ]
+    }
+    body = client.post("/api/cart/quote", json=payload).json()
+    assert body["units"] == 7
+    assert body["subtotal_cents"] == 3483
 
 
 def test_metrics_reset_clears_counters(client):
