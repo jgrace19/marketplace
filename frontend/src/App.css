@@ -697,6 +697,82 @@ body {
   color: #a80000;
 }
 
+.comparePage {
+  max-width: 760px;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+}
+
+.comparePage h2 {
+  margin: 0;
+}
+
+.comparePage > p {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.compareForm {
+  margin-top: 20px;
+}
+
+.compareForm label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.compareInputRow {
+  display: flex;
+  gap: 10px;
+}
+
+.compareInputRow input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #d2d6d0;
+  border-radius: 12px;
+  font: inherit;
+}
+
+.compareInputRow button {
+  border: none;
+  border-radius: 12px;
+  padding: 11px 18px;
+  background: #108910;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.compareInputRow button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.compareMessage {
+  margin: 16px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.compareError {
+  background: #ffe9e9;
+  color: #912525;
+}
+
+.compareSuccess {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  background: #e8f8ec;
+  color: #176a2d;
+}
+
 .profilePage {
   background: #fff;
   border: 1px solid #e9ece8;
@@ -780,6 +856,10 @@ body {
 }
 
 @media (max-width: 720px) {
+  .compareInputRow {
+    flex-direction: column;
+  }
+
   .profileGridRow {
     grid-template-columns: 1fr;
   }
