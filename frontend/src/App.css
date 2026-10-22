@@ -779,6 +779,240 @@ body {
   z-index: 20;
 }
 
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ordersHeader h2 {
+  margin: 0;
+}
+
+.ordersHeader p {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.ordersBackLink {
+  border: none;
+  background: transparent;
+  color: #108910;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.ordersEmpty {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ordersList {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderCard {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e1e5df;
+  background: #fbfcfb;
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.orderCard:hover {
+  border-color: #b9d8b5;
+  background: #f5faf3;
+}
+
+.orderCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orderCard h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.orderCardMeta {
+  margin: 4px 0 0;
+  color: #5a5a5a;
+  font-size: 0.9rem;
+}
+
+.orderCardRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.orderStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.orderStatusBadge.active {
+  background: #edf4ff;
+  color: #295295;
+}
+
+.orderStatusBadge.delivered {
+  background: #e8f8ec;
+  color: #176a2d;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.orderStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  text-align: center;
+}
+
+.orderStep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: calc(50% + 10px);
+  width: calc(100% - 20px);
+  height: 2px;
+  background: #d7ddd4;
+}
+
+.orderStep-done:not(:last-child)::after,
+.orderStep-current:not(:last-child)::after {
+  background: #108910;
+}
+
+.orderStepDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #c5ccc0;
+  background: #fff;
+  z-index: 1;
+}
+
+.orderStep-done .orderStepDot {
+  border-color: #108910;
+  background: #108910;
+}
+
+.orderStep-current .orderStepDot {
+  border-color: #108910;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(16, 137, 16, 0.18);
+}
+
+.orderStepLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b6b6b;
+  line-height: 1.2;
+}
+
+.orderStep-done .orderStepLabel,
+.orderStep-current .orderStepLabel {
+  color: #176a2d;
+}
+
+.ordersDetailHeading {
+  margin: 22px 0 10px;
+  font-size: 1rem;
+}
+
+.orderItemsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orderItemRow {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef1ec;
+}
+
+.orderItemRow:last-child {
+  border-bottom: none;
+}
+
+.orderItemThumb,
+.orderItemThumbPlaceholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #eef2ec;
+}
+
+.orderItemBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.orderItemName {
+  font-weight: 600;
+}
+
+.orderItemMeta {
+  color: #5a5a5a;
+  font-size: 0.86rem;
+}
+
+.ordersActions {
+  margin-top: 18px;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
@@ -787,5 +1021,13 @@ body {
   .cartsHubPanel,
   .cartDrawerPanel {
     width: 100%;
+  }
+
+  .orderStepper {
+    gap: 4px;
+  }
+
+  .orderStepLabel {
+    font-size: 0.65rem;
   }
 }
