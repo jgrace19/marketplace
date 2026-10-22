@@ -24,8 +24,12 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 | `GET` | `/api/stores?zip=` | Store list for a canned zip (`10002`, `94107`, `60614`) |
 | `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
 | `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
-| `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata |
-| `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` from session metadata |
+| `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata and per-line `substitutions` |
+| `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` and `substitutions` from session metadata |
+
+### Substitution preferences
+
+Each cart line carries an out-of-stock preference, `best_match` (default) or `no_replace`, chosen in the cart drawer and stored client-side under the `freshcart-substitutions` localStorage key (only non-default choices are stored, keyed by store id then product id). Checkout sends `substitutions: [{ product_id, preference }]`; the backend writes one `<product_id>:b|n` pair per line item (`b` = best match, `n` = don't replace) to the Stripe session's `substitutions` metadata value. Stripe caps a metadata value at 500 characters, so an oversized cart is cut at a pair boundary and `substitutions_truncated` records how many trailing lines were dropped.
 
 ## Run Backend
 

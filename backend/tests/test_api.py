@@ -238,6 +238,131 @@ def test_checkout_omits_metadata_without_store(client, monkeypatch):
     assert "metadata" not in create.call_args.kwargs
 
 
+def _checkout_with_fake_stripe(client, payload):
+    fake = SimpleNamespace(url="https://checkout.example.test/s", id="cs_test_123456")
+    with patch.object(main.stripe.checkout.Session, "create", return_value=fake) as create:
+        response = client.post("/api/checkout/session", json=payload)
+    return response, create
+
+
+def test_checkout_encodes_one_substitution_per_line(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    payload = {
+        "items": [
+            _sample_item(id="greenmart-grocery-0", name="Bananas"),
+            _sample_item(id="greenmart-grocery-2", name="Milk"),
+            _sample_item(id="greenmart-grocery-3", name="Eggs"),
+        ],
+        "store_id": _store_id(),
+        "substitutions": [
+            {"product_id": "greenmart-grocery-2", "preference": "best_match"},
+            {"product_id": "greenmart-grocery-0", "preference": "no_replace"},
+        ],
+    }
+
+    response, create = _checkout_with_fake_stripe(client, payload)
+
+    assert response.status_code == 200
+    metadata = create.call_args.kwargs["metadata"]
+    assert metadata["store_id"] == _store_id()
+    assert metadata["substitutions"] == (
+        "greenmart-grocery-0:n,greenmart-grocery-2:b,greenmart-grocery-3:b"
+    )
+    assert "substitutions_truncated" not in metadata
+
+
+def test_checkout_substitutions_without_store_still_write_metadata(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    payload = {
+        "items": [_sample_item()],
+        "substitutions": [{"product_id": "sku-1", "preference": "no_replace"}],
+    }
+
+    response, create = _checkout_with_fake_stripe(client, payload)
+
+    assert response.status_code == 200
+    assert create.call_args.kwargs["metadata"] == {"substitutions": "sku-1:n"}
+
+
+def test_checkout_substitution_preference_defaults_to_best_match(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    payload = {"items": [_sample_item()], "substitutions": [{"product_id": "sku-1"}]}
+
+    response, create = _checkout_with_fake_stripe(client, payload)
+
+    assert response.status_code == 200
+    assert create.call_args.kwargs["metadata"]["substitutions"] == "sku-1:b"
+
+
+@pytest.mark.parametrize(
+    "substitutions",
+    [
+        [{"product_id": "sku-1", "preference": "maybe"}],
+        [{"product_id": "", "preference": "no_replace"}],
+        [{"preference": "no_replace"}],
+        "sku-1:n",
+    ],
+)
+def test_checkout_rejects_malformed_substitutions(client, monkeypatch, substitutions):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    payload = {"items": [_sample_item()], "substitutions": substitutions}
+
+    with patch.object(main.stripe.checkout.Session, "create") as create:
+        response = client.post("/api/checkout/session", json=payload)
+
+    assert response.status_code == 422
+    create.assert_not_called()
+
+
+def test_checkout_rejects_substitution_for_unknown_item(client):
+    payload = {
+        "items": [_sample_item()],
+        "substitutions": [{"product_id": "sku-404", "preference": "no_replace"}],
+    }
+
+    with patch.object(main.stripe.checkout.Session, "create") as create:
+        response = client.post("/api/checkout/session", json=payload)
+
+    assert response.status_code == 400
+    assert "sku-404" in response.json()["detail"]
+    create.assert_not_called()
+
+
+def test_checkout_rejects_duplicate_substitution(client):
+    payload = {
+        "items": [_sample_item()],
+        "substitutions": [
+            {"product_id": "sku-1", "preference": "no_replace"},
+            {"product_id": "sku-1", "preference": "best_match"},
+        ],
+    }
+
+    response = client.post("/api/checkout/session", json=payload)
+
+    assert response.status_code == 400
+    assert "Duplicate" in response.json()["detail"]
+
+
+def test_checkout_truncates_substitutions_at_pair_boundary(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    product_ids = [f"megavalue-grocery-{index:02d}-long-sku-identifier" for index in range(20)]
+    payload = {
+        "items": [_sample_item(id=product_id, name=f"Item {product_id}") for product_id in product_ids],
+        "substitutions": [{"product_id": product_id, "preference": "no_replace"} for product_id in product_ids],
+    }
+
+    response, create = _checkout_with_fake_stripe(client, payload)
+
+    assert response.status_code == 200
+    metadata = create.call_args.kwargs["metadata"]
+    encoded = metadata["substitutions"]
+    assert len(encoded) <= main.STRIPE_METADATA_VALUE_LIMIT
+    pairs = encoded.split(",")
+    assert pairs == [f"{product_id}:n" for product_id in product_ids[: len(pairs)]]
+    assert 0 < len(pairs) < len(product_ids)
+    assert metadata["substitutions_truncated"] == str(len(product_ids) - len(pairs))
+
+
 def test_checkout_rejects_sub_cent_price(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
     payload = {"items": [_sample_item(price=0.001, quantity=1)]}
@@ -312,8 +437,30 @@ def test_session_status_returns_payment_fields(client, monkeypatch):
         "currency": "usd",
         "store_id": store_id,
         "store_name": store_name,
+        "substitutions": "",
     }
     retrieve.assert_called_once_with("cs_test_123456")
+
+
+def test_session_status_echoes_substitutions(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    fake = SimpleNamespace(
+        id="cs_test_123456",
+        status="complete",
+        payment_status="paid",
+        customer_details=None,
+        amount_total=698,
+        currency="usd",
+        metadata={"store_id": _store_id(), "substitutions": "sku-1:n,sku-2:b"},
+    )
+
+    with patch.object(main.stripe.checkout.Session, "retrieve", return_value=fake):
+        body = client.get(
+            "/api/checkout/session-status",
+            params={"session_id": "cs_test_123456"},
+        ).json()
+
+    assert body["substitutions"] == "sku-1:n,sku-2:b"
 
 
 def test_session_status_handles_missing_customer_and_metadata(client, monkeypatch):
@@ -340,6 +487,7 @@ def test_session_status_handles_missing_customer_and_metadata(client, monkeypatc
     assert body["amount_total"] is None
     assert body["store_id"] == ""
     assert body["store_name"] == ""
+    assert body["substitutions"] == ""
 
 
 def test_session_status_stripe_error_is_not_found(client, monkeypatch):

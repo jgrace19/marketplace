@@ -609,6 +609,47 @@ body {
   font-weight: 600;
 }
 
+.substitutionControl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.substitutionLabel {
+  font-size: 0.72rem;
+  color: #4f4f4f;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.substitutionOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.substitutionOption {
+  border: 1px solid #cfd5cf;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.substitutionOption:hover {
+  border-color: #108910;
+  color: #108910;
+}
+
+.substitutionOptionActive {
+  border-color: #108910;
+  background: #e8f8ec;
+  color: #108910;
+  font-weight: 600;
+}
+
 .cartDrawerFooter {
   margin-top: auto;
   padding-top: 12px;

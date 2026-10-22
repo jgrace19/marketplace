@@ -13,10 +13,12 @@ export default function CartDrawer({
   items,
   subtotal,
   otherCarts,
+  substitutionOptions,
   checkoutLoading,
   onClose,
   onIncrease,
   onDecrease,
+  onSubstitutionChange,
   onCheckout,
   onSwitchCart
 }) {
@@ -80,6 +82,29 @@ export default function CartDrawer({
                     <button type="button" onClick={() => onIncrease(item)} aria-label={`Increase ${item.name}`}>
                       +
                     </button>
+                  </div>
+                  <div
+                    className="substitutionControl"
+                    role="group"
+                    aria-label={`If ${item.name} is out of stock`}
+                  >
+                    <span className="substitutionLabel">If out of stock</span>
+                    <div className="substitutionOptions">
+                      {substitutionOptions.map((option) => {
+                        const selected = item.substitution === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`substitutionOption ${selected ? "substitutionOptionActive" : ""}`}
+                            aria-pressed={selected}
+                            onClick={() => onSubstitutionChange(item.id, option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </li>
