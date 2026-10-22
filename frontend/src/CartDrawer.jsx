@@ -17,6 +17,7 @@ export default function CartDrawer({
   onClose,
   onIncrease,
   onDecrease,
+  onSubstitutionChange,
   onCheckout,
   onSwitchCart
 }) {
@@ -81,6 +82,29 @@ export default function CartDrawer({
                       +
                     </button>
                   </div>
+                  <fieldset className="substitutionControl">
+                    <legend>If out of stock</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`substitution-${item.id}`}
+                        value="best_match"
+                        checked={item.substitution !== "no_replace"}
+                        onChange={() => onSubstitutionChange(item.id, "best_match")}
+                      />
+                      Replace with best match
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`substitution-${item.id}`}
+                        value="no_replace"
+                        checked={item.substitution === "no_replace"}
+                        onChange={() => onSubstitutionChange(item.id, "no_replace")}
+                      />
+                      Don't replace
+                    </label>
+                  </fieldset>
                 </div>
               </li>
             ))}
