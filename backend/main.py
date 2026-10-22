@@ -25,6 +25,12 @@ from stores import (
 
 load_dotenv()
 logger = logging.getLogger("freshcart.checkout")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _checkout_log = logging.StreamHandler()
+    _checkout_log.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_checkout_log)
+    logger.propagate = False
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173,http://127.0.0.1:5173,"
