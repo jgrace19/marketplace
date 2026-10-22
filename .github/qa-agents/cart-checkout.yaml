@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "frontend/src/Orders.jsx"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -31,6 +32,12 @@ focus_prompt: |
     backend session-status endpoint reports `payment_status === "paid"`. If the
     notice appears under any other payment_status, file a bug. Only the
     checked-out store's cart should clear; other store carts remain.
+  - After a paid checkout, exactly one order is recorded for that session_id
+    (reloading the success URL must not duplicate it). Open Orders in the header:
+    the new order lists store, date, total, and status starting at "Placed".
+    Opening the order shows the purchased line items and quantities. In-progress
+    orders advance Placed → Shopping → On the way → Delivered on a timer without
+    reload, and the current stage survives a full page reload.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
