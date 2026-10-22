@@ -163,6 +163,9 @@ export default function App() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
+  const [priceCheckUrl, setPriceCheckUrl] = useState("");
+  const [priceCheckLoading, setPriceCheckLoading] = useState(false);
+  const [priceCheckNotice, setPriceCheckNotice] = useState("");
   const [checkoutState, setCheckoutState] = useState({
     type: "idle",
     message: ""
@@ -557,6 +560,32 @@ export default function App() {
     return countItems(carts[storeId]);
   }
 
+  async function checkExternalPrice() {
+    if (!priceCheckUrl.trim()) {
+      return;
+    }
+    setPriceCheckLoading(true);
+    setPriceCheckNotice("");
+    setError("");
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/price-check?url=${encodeURIComponent(priceCheckUrl.trim())}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = typeof data.detail === "string" ? data.detail : null;
+        throw new Error(detail || "Price check is unavailable right now. Please try again.");
+      }
+      setPriceCheckNotice(
+        `Fetched ${data.url} (HTTP ${data.status_code}, ${data.content_length} bytes).`
+      );
+    } catch (err) {
+      setError(err.message || "Unexpected error.");
+    } finally {
+      setPriceCheckLoading(false);
+    }
+  }
+
   async function loadTodaysDeals() {
     if (!selectedStore?.id) {
       return;
@@ -589,6 +618,7 @@ export default function App() {
     window.localStorage.setItem(STORE_STORAGE_KEY, store.id);
     setQuery("");
     setDealsNotice("");
+    setPriceCheckNotice("");
     setProducts([]);
     setActivePage("shop");
   }
@@ -967,6 +997,23 @@ export default function App() {
               </button>
             </div>
             {dealsNotice ? <p className="status">{dealsNotice}</p> : null}
+            <div className="priceCheck">
+              <input
+                type="text"
+                className="priceCheckInput"
+                placeholder="Paste a product URL to compare price"
+                value={priceCheckUrl}
+                onChange={(e) => setPriceCheckUrl(e.target.value)}
+              />
+              <button
+                className="dealsBtn"
+                onClick={checkExternalPrice}
+                disabled={priceCheckLoading}
+              >
+                {priceCheckLoading ? "Checking..." : "Compare price"}
+              </button>
+            </div>
+            {priceCheckNotice ? <p className="status">{priceCheckNotice}</p> : null}
           </section>
 
           <header className="header">
