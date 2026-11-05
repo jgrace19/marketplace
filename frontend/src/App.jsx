@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage from "./OrdersPage";
+import { addOrder } from "./orders.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +12,8 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const CHECKOUT_PENDING_KEY = "freshcart-checkout-pending";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -171,6 +175,7 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => readJsonStorage(ORDERS_STORAGE_KEY, {}));
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +194,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +254,10 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === ORDERS_STORAGE_KEY) {
+        setOrders(parseStoredObject(event.newValue));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -624,6 +637,41 @@ export default function App() {
     closeCartPanel();
   }
 
+  function readCheckoutPending() {
+    try {
+      const raw = window.sessionStorage.getItem(CHECKOUT_PENDING_KEY);
+      if (!raw) {
+        return null;
+      }
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearCheckoutPending() {
+    window.sessionStorage.removeItem(CHECKOUT_PENDING_KEY);
+  }
+
+  function recordOrder({ id, storeId, storeName, items, total }) {
+    if (!id) {
+      return;
+    }
+    setOrders((prev) =>
+      addOrder(
+        prev,
+        {
+          id,
+          storeId: storeId || "",
+          storeName: storeName || "",
+          items: items || [],
+          total: total || 0
+        },
+        Date.now()
+      )
+    );
+  }
+
   async function verifyCheckout(sessionId) {
     const response = await fetch(
       `${API_BASE}/api/checkout/session-status?session_id=${encodeURIComponent(sessionId)}`
@@ -640,28 +688,73 @@ export default function App() {
       return;
     }
 
+    const payload = {
+      items: toCheckoutItems(cartItems),
+      store_id: activeStoreId,
+      store_name: selectedStore?.name || activeStoreId
+    };
+
     setCheckoutLoading(true);
     setError("");
     setCheckoutState({
       type: "info",
-      message: "Redirecting to Stripe Checkout..."
+      message: "Starting checkout..."
     });
     try {
+      let checkoutMode = "stripe";
+      try {
+        const modeResponse = await fetch(`${API_BASE}/api/checkout/mode`);
+        if (modeResponse.ok) {
+          const modeBody = await modeResponse.json();
+          checkoutMode = modeBody.checkout_mode || "stripe";
+        }
+      } catch {
+        checkoutMode = "stripe";
+      }
+      if (checkoutMode === "mock") {
+        const response = await fetch(`${API_BASE}/api/orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Checkout failed.");
+        }
+        clearStoreCart(activeStoreId);
+        closeCartPanel();
+        recordOrder({
+          id: data.order_id,
+          storeId: data.store_id || activeStoreId,
+          storeName: data.store_name || payload.store_name,
+          items: payload.items,
+          total: data.subtotal
+        });
+        setCheckoutState({
+          type: "success",
+          message: `Order placed. Charged ${currency(data.subtotal)}.`
+        });
+        return;
+      }
+
       window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
+      window.sessionStorage.setItem(
+        CHECKOUT_PENDING_KEY,
+        JSON.stringify({
+          storeId: activeStoreId,
+          storeName: payload.store_name,
+          items: payload.items,
+          subtotal: localSubtotal(cartItems)
+        })
+      );
+      setCheckoutState({
+        type: "info",
+        message: "Redirecting to Stripe Checkout..."
+      });
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image_url: item.image_url
-          })),
-          store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
-        })
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (!response.ok) {
@@ -673,6 +766,7 @@ export default function App() {
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+      clearCheckoutPending();
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -709,6 +803,17 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            const pending = readCheckoutPending();
+            const sessionTotal =
+              session.amount_total != null ? session.amount_total / 100 : pending?.subtotal || 0;
+            recordOrder({
+              id: session.session_id || sessionId,
+              storeId: session.store_id || pending?.storeId || "",
+              storeName: session.store_name || pending?.storeName || "",
+              items: pending?.items || [],
+              total: sessionTotal
+            });
+            clearCheckoutPending();
             setCheckoutState({
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
@@ -838,6 +943,18 @@ export default function App() {
         </button>
         <div className="rightNav">
           <button
+            type="button"
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setActivePage("orders");
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
+          <button
+            type="button"
             className="navLink"
             onClick={() => {
               setError("");
@@ -854,7 +971,21 @@ export default function App() {
       </header>
 
       {checkoutState.message ? (
-        <p className={`status checkoutNotice ${checkoutState.type}`}>{checkoutState.message}</p>
+        <div className={`status checkoutNotice ${checkoutState.type}`}>
+          <p>{checkoutState.message}</p>
+          {checkoutState.type === "success" ? (
+            <button
+              type="button"
+              className="secondaryBtn checkoutOrdersLink"
+              onClick={() => {
+                setActivePage("orders");
+                closeCartPanel();
+              }}
+            >
+              View orders
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {activePage === "stores" ? (
@@ -1057,6 +1188,17 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orders}
+          onBrowseStores={() => {
+            setError("");
+            setActivePage("stores");
+            closeCartPanel();
+          }}
+        />
       ) : null}
 
       {activePage === "profile" ? (

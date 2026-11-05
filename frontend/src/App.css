@@ -693,6 +693,16 @@ body {
   color: #912525;
 }
 
+.checkoutNotice p {
+  margin: 0;
+}
+
+.checkoutOrdersLink {
+  margin-top: 10px;
+  width: auto;
+  display: inline-block;
+}
+
 .error {
   color: #a80000;
 }
@@ -760,6 +770,161 @@ body {
   background: #e8f8ec;
   color: #176a2d;
   font-size: 0.9rem;
+}
+
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersPage h2 {
+  margin: 0;
+}
+
+.ordersPage > p {
+  margin-top: 8px;
+  color: #4f4f4f;
+}
+
+.orderList {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.orderRow {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e9ece8;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fafbf9;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font: inherit;
+}
+
+.orderRowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderRowDate {
+  font-size: 0.85rem;
+  color: #5a5a5a;
+}
+
+.orderRowAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.orderRowTotal {
+  font-weight: 700;
+}
+
+.orderStatusPill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #295295;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.orderBackBtn {
+  width: auto;
+  margin-bottom: 12px;
+}
+
+.orderMeta {
+  color: #5a5a5a;
+  margin: 8px 0 16px;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.orderStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8a8a8a;
+  font-size: 0.88rem;
+}
+
+.orderStepDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #d2d6d0;
+  flex-shrink: 0;
+}
+
+.orderStep.done {
+  color: #176a2d;
+}
+
+.orderStep.done .orderStepDot {
+  background: #108910;
+}
+
+.orderStep.current {
+  color: #1f1f1f;
+  font-weight: 600;
+}
+
+.orderStep.current .orderStepDot {
+  background: #108910;
+  box-shadow: 0 0 0 3px rgba(16, 137, 16, 0.25);
+}
+
+.orderItems {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  border-top: 1px solid #e9ece8;
+}
+
+.orderItemRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f1ee;
+}
+
+.orderItemName {
+  color: #1f1f1f;
+}
+
+.orderItemTotal {
+  font-weight: 600;
+}
+
+.orderGrandTotal {
+  margin-top: 12px;
+  text-align: right;
+  font-size: 1.05rem;
 }
 
 .profileFab {
