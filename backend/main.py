@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 import os
 from typing import List, Optional
+from urllib.parse import urlparse
 import re
 
+import requests
 import stripe
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
@@ -159,6 +161,48 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
         "average_deal_price": average_deal_price,
         "items": [asdict(p) for p in discounted],
         "store_id": resolved_store,
+    }
+
+
+REQUEST_HEADERS = {"User-Agent": "FreshCartPriceCheck/1.0"}
+PRICE_CHECK_TIMEOUT_SECONDS = 10
+
+
+def _validate_price_check_url(raw_url: str) -> str:
+    cleaned = (raw_url or "").strip()
+    if not cleaned:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid URL: a valid http:// or https:// URL is required.",
+        )
+    parsed = urlparse(cleaned)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or any(ch.isspace() for ch in cleaned):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid URL '{cleaned}': scheme must be http or https with a valid host.",
+        )
+    return cleaned
+
+
+@app.get("/api/price-check")
+def price_check(url: str = Query(default="")) -> dict:
+    validated_url = _validate_price_check_url(url)
+    try:
+        response = requests.get(
+            validated_url,
+            headers=REQUEST_HEADERS,
+            timeout=PRICE_CHECK_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to fetch comparison URL '{validated_url}': {exc}",
+        ) from exc
+
+    return {
+        "url": validated_url,
+        "status_code": response.status_code,
+        "content_length": len(response.content),
     }
 
 

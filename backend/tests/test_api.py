@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import requests
 
 import main
 from stores import DEFAULT_ZIP, STORES, SUPPORTED_ZIPS, ZIP_STORE_OVERRIDES
@@ -357,3 +358,70 @@ def test_session_status_stripe_error_is_not_found(client, monkeypatch):
 
     assert response.status_code == 404
     assert "no such session" in response.json()["detail"]
+
+
+def test_price_check_returns_status_and_content_length(client):
+    fake_response = SimpleNamespace(status_code=200, content=b"<html>$4.29</html>")
+    target_url = "https://www.comparableprice.com/product/123"
+
+    with patch.object(main.requests, "get", return_value=fake_response) as mock_get:
+        response = client.get("/api/price-check", params={"url": f"  {target_url}  "})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "url": target_url,
+        "status_code": 200,
+        "content_length": len(fake_response.content),
+    }
+    mock_get.assert_called_once_with(
+        target_url,
+        headers=main.REQUEST_HEADERS,
+        timeout=main.PRICE_CHECK_TIMEOUT_SECONDS,
+    )
+    assert main.PRICE_CHECK_TIMEOUT_SECONDS > 0
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "",
+        "   ",
+        "www.comparableprice.com",
+        "not-a-url",
+        "ftp://www.comparableprice.com/item",
+        "http://",
+        "https://",
+        "https://example.com/with space",
+    ],
+)
+def test_price_check_rejects_invalid_urls_with_400(client, bad_url):
+    with patch.object(main.requests, "get") as mock_get:
+        response = client.get("/api/price-check", params={"url": bad_url})
+
+    assert response.status_code == 400
+    assert "Invalid URL" in response.json()["detail"]
+    mock_get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        requests.exceptions.ConnectionError("Failed to establish a new connection"),
+        requests.exceptions.Timeout("Request timed out"),
+        requests.exceptions.RequestException("Upstream failure"),
+    ],
+)
+def test_price_check_maps_request_failures_to_502(client, exc):
+    target_url = "http://definitely-not-a-real-host.invalid/product"
+
+    with patch.object(main.requests, "get", side_effect=exc) as mock_get:
+        response = client.get("/api/price-check", params={"url": target_url})
+
+    assert response.status_code == 502
+    assert "Unable to fetch comparison URL" in response.json()["detail"]
+    mock_get.assert_called_once_with(
+        target_url,
+        headers=main.REQUEST_HEADERS,
+        timeout=main.PRICE_CHECK_TIMEOUT_SECONDS,
+    )
+
