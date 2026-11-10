@@ -5,6 +5,7 @@ description: |
   success/cancel flow, or shared product rendering used by the cart.
 paths:
   - "backend/main.py"
+  - "backend/stores.py"
   - "backend/requirements.txt"
   - "frontend/src/App.jsx"
   - "frontend/src/App.css"
@@ -23,13 +24,18 @@ focus_prompt: |
   - Product cards show inline qty controls after the first add.
   - Adding multiple distinct items to one store cart and incrementing quantities.
   - Verifying the drawer subtotal matches `sum(price * quantity)` for the items shown.
+  - Verifying delivery time-slot chips in the cart drawer are store-specific
+    (via `GET /api/stores/{id}/slots` / store ETA and distance), checkout is
+    disabled with a hint until a delivery slot is chosen, and picking a slot
+    (such as "Tomorrow 9–11am") enables the checkout button.
   - Running a full Stripe test-mode checkout using card 4242 4242 4242 4242,
     any future date, and any 3-digit CVC. Compare the Stripe-side total to the
     in-app cart total exactly (e.g., 2 bananas at $3.49 must charge $6.98, not
     $3.49 or $6.97).
   - After redirect back to the app, the success notice MUST only show when the
-    backend session-status endpoint reports `payment_status === "paid"`. If the
-    notice appears under any other payment_status, file a bug. Only the
+    backend session-status endpoint reports `payment_status === "paid"` and
+    must echo back the selected delivery slot from the Stripe session metadata.
+    If the notice appears under any other payment_status, file a bug. Only the
     checked-out store's cart should clear; other store carts remain.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from stores import (
     get_products_for_store,
+    get_slots_for_store,
     get_store,
     get_stores_for_zip,
 )
@@ -97,6 +98,7 @@ class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    delivery_slot: Optional[str] = None
 
 
 def configure_stripe() -> None:
@@ -129,6 +131,19 @@ def health() -> dict:
 def list_stores(zip: str = Query(default="", min_length=0)) -> dict:
     resolved_zip, items = get_stores_for_zip(zip)
     return {"items": items, "zip": resolved_zip, "count": len(items)}
+
+
+@app.get("/api/stores/{store_id}/slots")
+def list_store_slots(store_id: str, zip: str = Query(default="", min_length=0)) -> dict:
+    resolved_store = _require_store(store_id)
+    resolved_zip, store_data, slots = get_slots_for_store(resolved_store, zip)
+    return {
+        "store_id": resolved_store,
+        "zip": resolved_zip,
+        "eta_label": store_data.get("eta_label", ""),
+        "distance_mi": store_data.get("distance_mi", 0.0),
+        "slots": slots,
+    }
 
 
 @app.get("/api/products")
@@ -201,6 +216,9 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
+    cleaned_slot = (payload.delivery_slot or "").strip()
+    if cleaned_slot:
+        metadata["delivery_slot"] = cleaned_slot
     if metadata:
         session_kwargs["metadata"] = metadata
 
@@ -236,4 +254,5 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "delivery_slot": metadata.get("delivery_slot") or "",
     }

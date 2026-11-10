@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
+import re
 from typing import Dict, List, Optional
 
 
@@ -458,6 +459,62 @@ def get_stores_for_zip(zip_code: Optional[str] = None) -> tuple[str, List[dict]]
 
 def get_store(store_id: str) -> Optional[Store]:
     return STORES.get(store_id)
+
+
+def build_delivery_slots(eta_label: str = "", distance_mi: float = 0.0) -> List[str]:
+    match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", eta_label or "", re.IGNORECASE)
+    hour = int(match.group(1)) if match else 7
+    minute = int(match.group(2) or 0) if match else 0
+    dist = float(distance_mi or 0.0)
+
+    if dist < 1.0:
+        span = 1
+    elif dist < 3.0:
+        span = 2
+    else:
+        span = 3
+
+    if minute == 0:
+        start = hour - 1
+    elif minute < 30:
+        start = hour
+    elif dist < 1.0 or dist >= 3.0 or minute == 45:
+        start = hour - 1
+    else:
+        start = hour
+
+    start = max(1, min(9, start))
+    slots = [f"Today {start}–{start + span}pm"]
+
+    if span <= 2 and start + span * 2 <= 11:
+        slots.append(f"Today {start + span}–{start + span * 2}pm")
+
+    slots.append("Tomorrow 9–11am")
+    if dist < 1.0:
+        slots.append("Tomorrow 11am–1pm")
+    elif dist < 3.0:
+        slots.append("Tomorrow 1–3pm")
+    else:
+        slots.append("Tomorrow 2–5pm")
+
+    return slots
+
+
+def get_slots_for_store(
+    store_id: str, zip_code: Optional[str] = None
+) -> tuple[str, dict, List[str]]:
+    resolved = normalize_zip(zip_code)
+    store = STORES.get(store_id)
+    if not store:
+        return resolved, {}, []
+    payload = asdict(deepcopy(store))
+    patch = ZIP_STORE_OVERRIDES.get(resolved, {}).get(store_id, {})
+    payload.update(patch)
+    slots = build_delivery_slots(
+        eta_label=payload.get("eta_label", ""),
+        distance_mi=float(payload.get("distance_mi", 0.0)),
+    )
+    return resolved, payload, slots
 
 
 def get_products_for_store(store_id: str, limit: int = 60) -> List[dict]:
