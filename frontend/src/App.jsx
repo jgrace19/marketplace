@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage, { STAGE_MS, isOrderDelivered } from "./OrdersPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +11,9 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
+const PENDING_CHECKOUTS_STORAGE_KEY = "freshcart-pending-checkouts";
+const PENDING_CHECKOUT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -118,6 +122,62 @@ function buildCartItems(cartMap, cartCatalog, productCatalog) {
     .filter(Boolean);
 }
 
+function prunePendingCheckouts(pending) {
+  const cutoff = Date.now() - PENDING_CHECKOUT_MAX_AGE_MS;
+  const next = {};
+  for (const [sessionId, entry] of Object.entries(pending || {})) {
+    if (entry && typeof entry.createdAt === "number" && entry.createdAt >= cutoff) {
+      next[sessionId] = entry;
+    }
+  }
+  return next;
+}
+
+function readPendingCheckouts() {
+  return prunePendingCheckouts(readJsonStorage(PENDING_CHECKOUTS_STORAGE_KEY, {}));
+}
+
+function writePendingCheckouts(pending) {
+  window.localStorage.setItem(
+    PENDING_CHECKOUTS_STORAGE_KEY,
+    JSON.stringify(prunePendingCheckouts(pending))
+  );
+}
+
+function buildOrderFromSession(session) {
+  const sessionId = session.session_id;
+  const pending = readPendingCheckouts();
+  const snap = pending[sessionId];
+  const storeId = session.store_id || snap?.storeId || "";
+  const storeName = session.store_name || snap?.storeName || storeId;
+  let items = Array.isArray(snap?.items) ? snap.items : [];
+  let total = typeof snap?.subtotal === "number" ? snap.subtotal : 0;
+  if (typeof session.amount_total === "number" && session.amount_total > 0) {
+    total = session.amount_total / 100;
+  }
+  if (items.length === 0 && storeId) {
+    const carts = readJsonStorage(CARTS_STORAGE_KEY, {});
+    const catalog = readJsonStorage(CART_CATALOG_STORAGE_KEY, {});
+    items = buildCartItems(carts[storeId], catalog, catalog).map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      image_url: item.image_url || ""
+    }));
+    total = items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0);
+  }
+  return {
+    sessionId,
+    storeId,
+    storeName,
+    items,
+    total,
+    placedAt: Date.now(),
+    advancedMs: 0
+  };
+}
+
 function pruneCartCatalog(carts, catalog) {
   const keptIds = new Set();
   for (const cart of Object.values(carts)) {
@@ -171,6 +231,9 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => readJsonStorage(ORDERS_STORAGE_KEY, {}));
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +252,25 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  const ordersList = useMemo(() => Object.values(orders), [orders]);
+
+  const hasInProgressOrders = useMemo(
+    () => ordersList.some((order) => !isOrderDelivered(order, nowMs)),
+    [ordersList, nowMs]
+  );
+
+  useEffect(() => {
+    if (activePage !== "orders" || !hasInProgressOrders) {
+      return;
+    }
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [activePage, hasInProgressOrders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +327,11 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === ORDERS_STORAGE_KEY) {
+        const remote = parseStoredObject(event.newValue);
+        setOrders((prev) => ({ ...prev, ...remote }));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -624,6 +711,45 @@ export default function App() {
     closeCartPanel();
   }
 
+  function recordOrder(session) {
+    const sessionId = session.session_id;
+    if (!sessionId) {
+      return;
+    }
+    setOrders((prev) => {
+      if (prev[sessionId]) {
+        return prev;
+      }
+      const built = buildOrderFromSession(session);
+      if (!built.items.length) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: built };
+    });
+    const pending = readPendingCheckouts();
+    if (pending[sessionId]) {
+      delete pending[sessionId];
+      writePendingCheckouts(pending);
+    }
+  }
+
+  function advanceOrder(sessionId) {
+    if (!sessionId) {
+      return;
+    }
+    setOrders((prev) => {
+      const order = prev[sessionId];
+      if (!order) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [sessionId]: { ...order, advancedMs: (order.advancedMs || 0) + STAGE_MS }
+      };
+    });
+    setNowMs(Date.now());
+  }
+
   async function verifyCheckout(sessionId) {
     const response = await fetch(
       `${API_BASE}/api/checkout/session-status?session_id=${encodeURIComponent(sessionId)}`
@@ -670,6 +796,23 @@ export default function App() {
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
       }
+      if (data.session_id) {
+        const pending = readPendingCheckouts();
+        pending[data.session_id] = {
+          storeId: activeStoreId,
+          storeName: selectedStore?.name || activeStoreId,
+          items: cartItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            image_url: item.image_url || ""
+          })),
+          subtotal: cartTotal,
+          createdAt: Date.now()
+        };
+        writePendingCheckouts(pending);
+      }
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
@@ -713,6 +856,7 @@ export default function App() {
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
+            recordOrder(session);
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
             if (checkedOutStoreId) {
@@ -837,6 +981,17 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setActivePage("orders");
+              setSelectedOrderId(null);
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1057,6 +1212,22 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={ordersList}
+          nowMs={nowMs}
+          selectedOrderId={selectedOrderId}
+          onSelectOrder={setSelectedOrderId}
+          onBackToList={() => setSelectedOrderId(null)}
+          onAdvanceOrder={advanceOrder}
+          onBrowseStores={() => {
+            setError("");
+            setActivePage("stores");
+            setSelectedOrderId(null);
+          }}
+        />
       ) : null}
 
       {activePage === "profile" ? (
