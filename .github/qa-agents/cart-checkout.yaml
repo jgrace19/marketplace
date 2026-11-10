@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "frontend/src/Orders.jsx"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -36,4 +37,11 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Order history: after a paid checkout returns, the Orders page (header nav)
+    must show exactly one order for that session_id with the right store,
+    total, and line items. Reloading the success URL again, or reloading the
+    app, must not create a duplicate. The status stepper advances Placed ->
+    Shopping -> On the way -> Delivered on a timer without a reload, and the
+    stage and history persist across reloads (`freshcart-orders` in
+    localStorage). No order may be created for unpaid or canceled checkouts.
 max_turns: 60
