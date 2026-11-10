@@ -36,4 +36,10 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Compare Price (`/api/price-check`): test the Compare Price input on the Shop
+    page with a scheme-less URL (e.g. `www.comparableprice.com`), a non-URL
+    (`not-a-url`), an unreachable host (`http://definitely-not-a-real-host.invalid/product`),
+    and a valid reachable URL. Verify that invalid URLs return HTTP 400 and
+    unreachable hosts return HTTP 502 with clear user-facing messages rather
+    than unhandled HTTP 500s.
 max_turns: 60

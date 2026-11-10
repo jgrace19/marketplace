@@ -163,6 +163,9 @@ export default function App() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
+  const [priceCheckUrl, setPriceCheckUrl] = useState("");
+  const [priceCheckLoading, setPriceCheckLoading] = useState(false);
+  const [priceCheckResult, setPriceCheckResult] = useState(null);
   const [checkoutState, setCheckoutState] = useState({
     type: "idle",
     message: ""
@@ -390,6 +393,7 @@ export default function App() {
     window.localStorage.setItem(STORE_STORAGE_KEY, match.id);
     setQuery("");
     setDealsNotice("");
+    setPriceCheckResult(null);
     setProducts([]);
     setActivePage("shop");
     setCartPanel(pending.panel === "drawer" ? "drawer" : null);
@@ -589,8 +593,40 @@ export default function App() {
     window.localStorage.setItem(STORE_STORAGE_KEY, store.id);
     setQuery("");
     setDealsNotice("");
+    setPriceCheckResult(null);
     setProducts([]);
     setActivePage("shop");
+  }
+
+  async function handlePriceCheck(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    setPriceCheckLoading(true);
+    setPriceCheckResult(null);
+    try {
+      const params = new URLSearchParams({ url: priceCheckUrl.trim() });
+      const response = await fetch(`${API_BASE}/api/price-check?${params.toString()}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setPriceCheckResult({
+          type: "error",
+          message: data.detail || `Price check failed (HTTP ${response.status}).`
+        });
+        return;
+      }
+      setPriceCheckResult({
+        type: "success",
+        message: `Checked ${data.url} — HTTP ${data.status_code} (${data.content_length} bytes).`
+      });
+    } catch (err) {
+      setPriceCheckResult({
+        type: "error",
+        message: err.message || "Unable to compare price right now."
+      });
+    } finally {
+      setPriceCheckLoading(false);
+    }
   }
 
   async function handleZipChange(zip) {
@@ -967,6 +1003,23 @@ export default function App() {
               </button>
             </div>
             {dealsNotice ? <p className="status">{dealsNotice}</p> : null}
+            <form className="priceCheckBar" onSubmit={handlePriceCheck}>
+              <input
+                type="text"
+                value={priceCheckUrl}
+                onChange={(event) => setPriceCheckUrl(event.target.value)}
+                placeholder="Compare competitor URL (e.g. https://example.com/item)..."
+                aria-label="Compare competitor URL"
+              />
+              <button type="submit" className="priceCheckBtn" disabled={priceCheckLoading}>
+                {priceCheckLoading ? "Checking..." : "Compare Price"}
+              </button>
+            </form>
+            {priceCheckResult ? (
+              <p className={`status priceCheckNotice ${priceCheckResult.type}`} role="status">
+                {priceCheckResult.message}
+              </p>
+            ) : null}
           </section>
 
           <header className="header">
