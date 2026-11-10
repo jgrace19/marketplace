@@ -789,3 +789,213 @@ body {
     width: 100%;
   }
 }
+
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersPage h2 {
+  margin: 0;
+}
+
+.orderMeta {
+  margin: 4px 0 0;
+  color: #5c5c5c;
+  font-size: 0.9rem;
+}
+
+.ordersEmpty {
+  margin-top: 16px;
+}
+
+.orderList {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderCard {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #e0e4de;
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.orderCard:hover {
+  border-color: #108910;
+}
+
+.orderCardTop,
+.orderDetailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.orderCardTop h3 {
+  margin: 0;
+}
+
+.orderCardRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.orderStatus {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #edf4ff;
+  color: #295295;
+}
+
+.orderStatus-1 {
+  background: #fff4de;
+  color: #7b5a13;
+}
+
+.orderStatus-2 {
+  background: #fde9dc;
+  color: #a33a00;
+}
+
+.orderStatus-3 {
+  background: #e8f8ec;
+  color: #176a2d;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.orderStep {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #8a8f88;
+}
+
+.orderStep::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 50%;
+  width: 100%;
+  height: 3px;
+  background: #dfe3dc;
+}
+
+.orderStep:first-child::before {
+  display: none;
+}
+
+.orderStepDot {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #dfe3dc;
+  color: #5c5c5c;
+  font-size: 0.8rem;
+}
+
+.orderStep-done,
+.orderStep-current {
+  color: #1f1f1f;
+}
+
+.orderStep-done::before,
+.orderStep-current::before {
+  background: #108910;
+}
+
+.orderStep-done .orderStepDot,
+.orderStep-current .orderStepDot {
+  background: #108910;
+  color: #fff;
+}
+
+.orderStep-current .orderStepDot {
+  box-shadow: 0 0 0 4px #d5efd5;
+}
+
+.orderBackBtn {
+  border: none;
+  background: transparent;
+  color: #108910;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.orderItems {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  border-top: 1px solid #ebeeea;
+}
+
+.orderItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ebeeea;
+}
+
+.orderItem img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.orderItemBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.orderItemBody span {
+  color: #5c5c5c;
+  font-size: 0.88rem;
+}
+
+.orderTotalRow {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  font-size: 1.05rem;
+}
