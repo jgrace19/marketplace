@@ -312,6 +312,7 @@ def test_session_status_returns_payment_fields(client, monkeypatch):
         "currency": "usd",
         "store_id": store_id,
         "store_name": store_name,
+        "delivery_slot": "",
     }
     retrieve.assert_called_once_with("cs_test_123456")
 
@@ -340,6 +341,70 @@ def test_session_status_handles_missing_customer_and_metadata(client, monkeypatc
     assert body["amount_total"] is None
     assert body["store_id"] == ""
     assert body["store_name"] == ""
+    assert body["delivery_slot"] == ""
+
+
+def test_store_slots_are_store_specific_and_include_tomorrow_morning(client):
+    greenmart = client.get("/api/stores/greenmart/slots", params={"zip": "10002"}).json()
+    costclub = client.get("/api/stores/costclub/slots", params={"zip": "10002"}).json()
+
+    assert greenmart["store_id"] == "greenmart"
+    assert "Today 6–8pm" in greenmart["slots"]
+    assert "Tomorrow 9–11am" in greenmart["slots"]
+    assert costclub["store_id"] == "costclub"
+    assert "Tomorrow 9–11am" in costclub["slots"]
+    assert greenmart["slots"] != costclub["slots"]
+
+
+def test_store_slots_reject_unknown_store(client):
+    response = client.get("/api/stores/missing-store/slots")
+    assert response.status_code == 404
+
+
+def test_checkout_threads_delivery_slot_into_metadata_and_status(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    store_id = _store_id()
+    store_name = STORES[store_id].name
+    chosen_slot = "Tomorrow 9–11am"
+    fake_created = SimpleNamespace(url="https://checkout.example.test/s", id="cs_test_slot_123")
+    payload = {
+        "items": [_sample_item()],
+        "store_id": store_id,
+        "store_name": store_name,
+        "delivery_slot": chosen_slot,
+    }
+
+    with patch.object(main.stripe.checkout.Session, "create", return_value=fake_created) as create:
+        create_res = client.post("/api/checkout/session", json=payload)
+
+    assert create_res.status_code == 200
+    assert create.call_args.kwargs["metadata"] == {
+        "store_id": store_id,
+        "store_name": store_name,
+        "delivery_slot": chosen_slot,
+    }
+
+    fake_retrieved = SimpleNamespace(
+        id="cs_test_slot_123",
+        status="complete",
+        payment_status="paid",
+        customer_details=SimpleNamespace(email="buyer@example.com"),
+        amount_total=698,
+        currency="usd",
+        metadata={
+            "store_id": store_id,
+            "store_name": store_name,
+            "delivery_slot": chosen_slot,
+        },
+    )
+    with patch.object(main.stripe.checkout.Session, "retrieve", return_value=fake_retrieved):
+        status_res = client.get(
+            "/api/checkout/session-status",
+            params={"session_id": "cs_test_slot_123"},
+        )
+
+    assert status_res.status_code == 200
+    assert status_res.json()["delivery_slot"] == chosen_slot
 
 
 def test_session_status_stripe_error_is_not_found(client, monkeypatch):
