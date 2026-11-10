@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 import os
-from typing import List, Optional
+from typing import List, Literal, Optional
 import re
 
 import stripe
@@ -63,17 +63,38 @@ def _tokenize(text: str) -> List[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
+def _product_terms(product: Product) -> List[str]:
+    return _tokenize(f"{product.name} {product.description}")
+
+
+def _term_in_product(term: str, product_terms: List[str]) -> bool:
+    return any(term in token for token in product_terms)
+
+
 def _matches_partial_terms(product: Product, query: str) -> bool:
     query_terms = _tokenize(query)
     if not query_terms:
         return True
 
-    product_terms = _tokenize(f"{product.name} {product.description}")
+    product_terms = _product_terms(product)
     if not product_terms:
         return False
 
-    # Every query term must be a direct substring of at least one product term.
-    return all(any(term in token for token in product_terms) for term in query_terms)
+    # Typed search: every query term must be a substring of at least one product term.
+    return all(_term_in_product(term, product_terms) for term in query_terms)
+
+
+def _matches_any_term(product: Product, query: str) -> bool:
+    query_terms = _tokenize(query)
+    if not query_terms:
+        return True
+
+    product_terms = _product_terms(product)
+    if not product_terms:
+        return False
+
+    # Category chips send alternative keywords. Any one of them is enough.
+    return any(_term_in_product(term, product_terms) for term in query_terms)
 
 
 def _require_store(store_id: str) -> str:
@@ -135,12 +156,14 @@ def list_stores(zip: str = Query(default="", min_length=0)) -> dict:
 def list_products(
     store_id: str = Query(default=""),
     query: str = Query(default="", min_length=0),
+    match: Literal["all", "any"] = Query(default="all"),
     limit: int = Query(default=24, ge=1, le=60),
 ) -> dict:
     resolved_store = _require_store(store_id)
     products = get_store_products(resolved_store, limit=limit)
     if query.strip():
-        products = [p for p in products if _matches_partial_terms(p, query)]
+        matcher = _matches_any_term if match == "any" else _matches_partial_terms
+        products = [p for p in products if matcher(p, query)]
     return {"items": [asdict(p) for p in products], "count": len(products), "store_id": resolved_store}
 
 

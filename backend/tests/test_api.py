@@ -126,6 +126,74 @@ def test_product_search_with_no_match_is_empty(client):
     assert body == {"items": [], "count": 0, "store_id": store_id}
 
 
+def test_product_search_requires_every_term(client):
+    body = client.get(
+        "/api/products",
+        params={
+            "store_id": "greenmart",
+            "query": "apple banana avocado spinach strawberry",
+        },
+    ).json()
+    assert body == {"items": [], "count": 0, "store_id": "greenmart"}
+
+    explicit = client.get(
+        "/api/products",
+        params={
+            "store_id": "greenmart",
+            "query": "apple banana",
+            "match": "all",
+        },
+    ).json()
+    assert explicit["count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_names"),
+    [
+        (
+            "apple banana avocado spinach strawberry",
+            [
+                "Organic Bananas (6 ct)",
+                "Avocados (4 ct)",
+                "Baby Spinach - 10 oz",
+                "Honeycrisp Apples (3 lb bag)",
+            ],
+        ),
+        (
+            "milk yogurt eggs",
+            [
+                "2% Milk - 1 Gallon",
+                "Large Brown Eggs (12 ct)",
+                "Greek Yogurt - Plain 32 oz",
+            ],
+        ),
+        (
+            "chicken eggs",
+            [
+                "Large Brown Eggs (12 ct)",
+                "Chicken Breast - 1.5 lb",
+            ],
+        ),
+    ],
+)
+def test_category_chip_query_matches_any_term(client, query, expected_names):
+    body = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": query, "match": "any"},
+    ).json()
+    assert [item["name"] for item in body["items"]] == expected_names
+    assert body["count"] == len(expected_names)
+    assert body["store_id"] == "greenmart"
+
+
+def test_product_search_rejects_unknown_match(client):
+    response = client.get(
+        "/api/products",
+        params={"store_id": "greenmart", "query": "banana", "match": "or"},
+    )
+    assert response.status_code == 422
+
+
 def test_recommendations_follow_deal_rule(client):
     store_id = _store_id()
     catalog = client.get("/api/products", params={"store_id": store_id, "limit": 60}).json()["items"]

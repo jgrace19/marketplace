@@ -29,6 +29,17 @@ const QUICK_FILTERS = [
   { label: "Bakery", query: "bread sourdough" },
   { label: "Protein", query: "chicken eggs" }
 ];
+
+function matchModeForQuery(search) {
+  const trimmed = search.trim();
+  // Chip phrases list alternative products. The API ANDs every word, so an
+  // exact chip query has to ask for any-term matching or the grid is empty.
+  if (QUICK_FILTERS.some((filter) => filter.query === trimmed)) {
+    return "any";
+  }
+  return "all";
+}
+
 const CARTOON_AVATARS = ["🐼", "🦊", "🐸", "🐻", "🐯", "🐨", "🐵", "🐰"];
 
 function createEmptyProfile() {
@@ -303,6 +314,10 @@ export default function App() {
       params.set("store_id", storeId);
       if (search.trim()) {
         params.set("query", search.trim());
+        const match = matchModeForQuery(search);
+        if (match === "any") {
+          params.set("match", match);
+        }
       }
       const response = await fetch(`${API_BASE}/api/products?${params.toString()}`);
       if (!response.ok) {

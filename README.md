@@ -22,7 +22,7 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 |--------|------|--------|
 | `GET` | `/api/health` | Health check |
 | `GET` | `/api/stores?zip=` | Store list for a canned zip (`10002`, `94107`, `60614`) |
-| `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
+| `GET` | `/api/products?store_id=&query=&match=&limit=` | **Requires** `store_id`. `match` is `all` (default, every term) or `any` (category chips) |
 | `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
 | `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata |
 | `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` from session metadata |
