@@ -1,25 +1,28 @@
 ---
 name: implement
-description: Read a Linear ticket, plan the implementation, build it, and test it end to end. Use when the user asks to implement, build, or work a Linear ticket (e.g. "implement FE-11", "/implement FE-12"), or references a Linear issue key or URL and wants the work done.
+description: Read a Linear or Jira ticket, plan the implementation, build it, and test it end to end. Use when the user asks to implement, build, or work a ticket (e.g. "implement FE-11", "/implement MRKTPLC-13", "implement MAR-5"), or references a Linear or Jira issue key or URL and wants the work done.
 disable-model-invocation: false
 ---
 
-# Implement a Linear ticket
+# Implement a ticket
 
-Take a Linear ticket from key to a tested, PR-ready change. Read the ticket, plan, implement against this repo's conventions, verify, and open a PR. Do **not** change the ticket's status.
+Take a ticket from key to a tested, PR-ready change. Read the ticket, plan, implement against this repo's conventions, verify, and open a PR. Do **not** change the ticket's status.
 
 ## Inputs
 
-Expect a Linear issue key (e.g. `FE-11`) or a Linear URL such as `https://linear.app/fe-demo/issue/FE-11/...`. If none is given, ask for one before proceeding.
+Expect an issue key or URL from one of the boards below. If none is given, ask for one before proceeding.
 
-Feature work for this app lives in the Linear **FreshCart** project:
+| Key prefix | Tracker | Board |
+|---|---|---|
+| `FE-` | Linear | FreshCart project, team Fe-demo: https://linear.app/fe-demo/project/freshcart-536c4def58f4/issues (`P-FE-1`) |
+| `MRKTPLC-` | Jira | https://fe-anysphere-demo.atlassian.net/jira/software/projects/MRKTPLC/boards/1306 |
+| `MAR-` | Jira | https://fe-anysphere-demo.atlassian.net/jira/software/projects/MAR/boards/934 |
 
-https://linear.app/fe-demo/project/freshcart-536c4def58f4/overview
+Jira site: `fe-anysphere-demo.atlassian.net`.
 
-- Team: Fe-demo (`FE`)
-- Project: FreshCart (`P-FE-1`)
+Route by key prefix (or by the URL host: `linear.app` vs `atlassian.net`). If the key does not match one of these prefixes, stop and ask which board it belongs to. Do not guess or search other projects.
 
-Do not read or implement a Jira / MAR ticket for this app. If the user names a Jira key, ask them for the Linear issue instead.
+Many tickets exist in more than one tracker. A Linear `FE-*` issue that was moved to Jira has a comment "Moved to Jira: MRKTPLC-N"; a Jira `MRKTPLC-*` issue copied from elsewhere opens with "Migrated from Linear FE-N" or "Copied from MAR-N". When you see such a link, read the counterpart too and treat the ticket the user named as canonical if the two disagree.
 
 ## Workflow
 
@@ -37,11 +40,22 @@ Copy this checklist and track progress with the todo tool:
 
 ### 1. Read the ticket
 
-Use the Linear MCP. Discover the tool schema before calling it.
+Discover the tool schema before calling it.
+
+**Linear (`FE-*`)** — Linear MCP (`plugin-linear-linear`):
 
 - Call `get_issue` with the issue identifier (e.g. `FE-11`). Read title, description, status, labels, priority, and project.
 - Call `list_comments` with `issueId` set to that identifier.
 - Confirm the issue is on team Fe-demo and project FreshCart. If it is not, stop and say so.
+
+**Jira (`MRKTPLC-*`, `MAR-*`)** — Atlassian MCP (`plugin-atlassian-atlassian`):
+
+- Call `getJiraIssue` with `cloudId: "fe-anysphere-demo.atlassian.net"`, `issueIdOrKey` set to the key, and `view: "evidence"`. Read summary, description, status, issue type, labels, and priority.
+- Call `listJiraIssueComments` with the same `cloudId` and key.
+- Confirm the issue's project is `MRKTPLC` or `MAR`. If it is not, stop and say so.
+
+For either tracker:
+
 - Tickets include a **Verification** section (sometimes titled Verification user flow). Treat it as the test script for step 5.
 - If the description references other issues, meetings, or docs, pull just enough context to act.
 - Restate the goal and the acceptance criteria in one short paragraph before planning.
@@ -94,11 +108,11 @@ If the change is user-visible (pages, nav, components, styling), the task is not
 
 Commit on the feature branch, push, and open a PR to `main` with `gh`:
 
-- Reference the ticket key in the PR title or body (e.g. `FE-11`).
+- Reference the ticket key in the PR title or body (e.g. `FE-11`, `MRKTPLC-13`). If the ticket has a counterpart in the other tracker, mention both keys.
 - In the body, summarize the change, list how acceptance criteria are met, and note verification (`npm run build`, curl checks, user-flow walkthrough).
 - Report the PR URL to the user.
 
-**Do not transition or comment the ticket's status** — leave Linear status changes to the user. Do not call `save_issue` to move state.
+**Do not transition or comment the ticket's status** — leave status changes to the user. Do not call Linear `save_issue` or Jira `transitionJiraIssue` / `editJiraIssue` to move state.
 
 ## Notes
 
