@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "frontend/src/OrdersPage.jsx"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -31,6 +32,14 @@ focus_prompt: |
     backend session-status endpoint reports `payment_status === "paid"`. If the
     notice appears under any other payment_status, file a bug. Only the
     checked-out store's cart should clear; other store carts remain.
+  - After a paid checkout, the header `Orders` page must show exactly one new
+    order for that Stripe session (store name, date, total matching the cart,
+    status `Placed`). The stepper must advance Placed -> Shopping -> On the way
+    -> Delivered on its own (~15s per stage) without a reload; reloading must
+    keep both the order and its current stage. Opening the order must list the
+    same line items and quantities that were purchased. Re-visiting the same
+    `?checkout=success&session_id=...` URL must NOT create a duplicate order,
+    and an unpaid/failed session must create no order at all.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),

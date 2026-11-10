@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage, { isOrderInProgress } from "./OrdersPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +11,8 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
+const ORDER_TICK_MS = 1000;
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -118,6 +121,42 @@ function buildCartItems(cartMap, cartCatalog, productCatalog) {
     .filter(Boolean);
 }
 
+function buildOrderRecord(session, storeId, cartMap, cartCatalog, storeName) {
+  const items = Object.entries(cartMap || {})
+    .map(([productId, quantity]) => {
+      const product = cartCatalog[productId];
+      if (!product || !quantity) {
+        return null;
+      }
+      return {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity,
+        image_url: product.image_url || ""
+      };
+    })
+    .filter(Boolean);
+  const itemsTotal = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+  const total =
+    typeof session.amount_total === "number" ? session.amount_total / 100 : itemsTotal;
+  return {
+    id: session.session_id,
+    storeId,
+    storeName: storeName || storeId || "FreshCart order",
+    items,
+    total,
+    currency: session.currency || "usd",
+    placedAt: new Date().toISOString()
+  };
+}
+
+function sortOrdersNewestFirst(orderMap) {
+  return Object.values(orderMap || {})
+    .filter((order) => order && order.id)
+    .sort((a, b) => Date.parse(b.placedAt || 0) - Date.parse(a.placedAt || 0));
+}
+
 function pruneCartCatalog(carts, catalog) {
   const keptIds = new Set();
   for (const cart of Object.values(carts)) {
@@ -171,6 +210,9 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => readJsonStorage(ORDERS_STORAGE_KEY, {}));
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [orderClock, setOrderClock] = useState(() => Date.now());
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +231,25 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  const orderList = useMemo(() => sortOrdersNewestFirst(orders), [orders]);
+  const activeOrderCount = useMemo(
+    () => orderList.filter((order) => isOrderInProgress(order, orderClock)).length,
+    [orderList, orderClock]
+  );
+  const hasActiveOrders = activeOrderCount > 0;
+
+  useEffect(() => {
+    if (!hasActiveOrders) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => setOrderClock(Date.now()), ORDER_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [hasActiveOrders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +306,12 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === ORDERS_STORAGE_KEY) {
+        const remote = parseStoredObject(event.newValue);
+        setOrders((prev) => ({ ...prev, ...remote }));
+        setOrderClock(Date.now());
       }
     }
     window.addEventListener("storage", onStorage);
@@ -498,6 +565,31 @@ export default function App() {
     });
   }
 
+  function recordOrder(session, storeId) {
+    const sessionId = session?.session_id;
+    if (!sessionId) {
+      return;
+    }
+    const storeName =
+      session.store_name || stores.find((store) => store.id === storeId)?.name || "";
+    const record = buildOrderRecord(session, storeId, carts[storeId], cartCatalog, storeName);
+    setOrders((prev) => {
+      // One order per Stripe session: re-landing on the success URL must not duplicate it.
+      if (prev[sessionId]) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: record };
+    });
+    setOrderClock(Date.now());
+  }
+
+  function openOrders(orderId = null) {
+    setError("");
+    setSelectedOrderId(orderId);
+    setActivePage("orders");
+    closeCartPanel();
+  }
+
   function addToCart(product) {
     const productId = typeof product === "string" ? product : product.id;
     const catalogProduct =
@@ -715,6 +807,7 @@ export default function App() {
             });
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
+            recordOrder({ ...session, session_id: session.session_id || sessionId }, checkedOutStoreId);
             if (checkedOutStoreId) {
               clearStoreCart(checkedOutStoreId);
             }
@@ -838,6 +931,18 @@ export default function App() {
         </button>
         <div className="rightNav">
           <button
+            type="button"
+            className={`navLink ${activePage === "orders" ? "navLinkActive" : ""}`}
+            onClick={() => openOrders(null)}
+          >
+            Orders
+            {activeOrderCount > 0 ? (
+              <span className="navCount" aria-label={`${activeOrderCount} in progress`}>
+                {activeOrderCount}
+              </span>
+            ) : null}
+          </button>
+          <button
             className="navLink"
             onClick={() => {
               setError("");
@@ -854,7 +959,14 @@ export default function App() {
       </header>
 
       {checkoutState.message ? (
-        <p className={`status checkoutNotice ${checkoutState.type}`}>{checkoutState.message}</p>
+        <p className={`status checkoutNotice ${checkoutState.type}`}>
+          {checkoutState.message}
+          {checkoutState.type === "success" && activePage !== "orders" ? (
+            <button type="button" className="checkoutNoticeAction" onClick={() => openOrders(null)}>
+              Track order
+            </button>
+          ) : null}
+        </p>
       ) : null}
 
       {activePage === "stores" ? (
@@ -1164,6 +1276,19 @@ export default function App() {
             </div>
           </form>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orderList}
+          now={orderClock}
+          selectedOrderId={selectedOrderId}
+          onSelectOrder={setSelectedOrderId}
+          onBrowseStores={() => {
+            setError("");
+            setActivePage("stores");
+          }}
+        />
       ) : null}
 
       {cartPanel === "hub" ? (
