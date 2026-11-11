@@ -2,6 +2,7 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { Finding, Triage } from "./findings.js";
 import { TriageSchema } from "./findings.js";
 import {
+  createLineBufferedLogger,
   startStreamHeartbeat,
   waitForRunWithTimeout,
 } from "./agent-runtime.js";
@@ -62,20 +63,24 @@ export async function runTriageAgent(
       `[triage:${finding.id}] cloud agent ${agent.agentId} run ${run.id} started`,
     );
 
-    const heartbeat = startStreamHeartbeat({ label: `triage:${finding.id}` });
-    let lastText = "";
+    const triageLabel = `triage:${finding.id}`;
+    const heartbeat = startStreamHeartbeat({ label: triageLabel });
+    const logger = createLineBufferedLogger(triageLabel);
+    let assistantText = "";
     try {
       for await (const event of run.stream()) {
         heartbeat.tick();
         if (event.type === "assistant") {
           for (const block of event.message.content) {
-            if (block.type === "text" && block.text.trim()) {
-              lastText = block.text;
+            if (block.type === "text" && block.text) {
+              logger.write(block.text);
+              assistantText += block.text;
             }
           }
         }
       }
     } finally {
+      logger.flush();
       heartbeat.stop();
     }
 
@@ -103,7 +108,7 @@ export async function runTriageAgent(
       };
     }
 
-    const text = result.result?.trim() || lastText;
+    const text = result.result?.trim() || assistantText;
     const parsed = parseTriage(text);
     if (!parsed) {
       return {
