@@ -1,0 +1,26 @@
+id: orders-history
+description: |
+  Order history and live status tracker. Should run if the diff touches checkout
+  success handling, order persistence, the Orders page, or the status stepper.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/OrdersPage.jsx"
+  - "frontend/index.html"
+  - "frontend/package.json"
+  - ".github/qa-agents/cart-checkout.yaml"
+focus_prompt: |
+  Probe the Orders page and post-checkout order records for bugs. Cover:
+  - After a paid Stripe checkout, open Orders. The new order appears with
+    store name, date, total, and status "Placed" (or the next stage if enough
+    time has already elapsed). Exactly one record exists for that session_id.
+  - Open the order. Line items and quantities match what was purchased. The
+    stepper shows Placed → Shopping → On the way → Delivered.
+  - Wait for the simulated timer without reloading: the current stage advances
+    in place through Shopping and On the way to Delivered.
+  - Reload while an order is in progress: history remains and the current
+    stage does not reset to Placed (it continues from elapsed time).
+  - Edge cases: returning from checkout twice with the same session_id does
+    not create a duplicate; empty Orders shows a helpful empty state; the
+    Orders nav control is reachable from Stores, Shop, and Profile.
+max_turns: 40

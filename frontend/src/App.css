@@ -779,6 +779,224 @@ body {
   z-index: 20;
 }
 
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ordersPage h2 {
+  margin: 0;
+}
+
+.ordersSubhead {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.ordersBackLink {
+  border: none;
+  background: transparent;
+  color: #108910;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.ordersEmpty {
+  margin: 16px 0 0;
+  color: #4f4f4f;
+}
+
+.ordersList {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderCard {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #eceeea;
+  border-radius: 16px;
+  padding: 14px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  box-shadow: 0 2px 8px rgba(22, 29, 22, 0.05);
+}
+
+.orderCard:hover {
+  border-color: #108910;
+}
+
+.orderCardBody h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.orderCardMeta {
+  margin: 4px 0 0;
+  color: #4f4f4f;
+  font-size: 0.88rem;
+}
+
+.orderStatusBadge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.orderStatusBadge--live {
+  background: #edf4ff;
+  color: #295295;
+}
+
+.orderStatusBadge--done {
+  background: #e8f8ec;
+  color: #176a2d;
+}
+
+.orderStepper {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: flex;
+  gap: 0;
+}
+
+.orderStepperStep {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.orderStepperStep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: calc(50% + 12px);
+  right: calc(-50% + 12px);
+  height: 3px;
+  background: #d2d6d0;
+}
+
+.orderStepperStep--done:not(:last-child)::after {
+  background: #108910;
+}
+
+.orderStepperDot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 3px solid #d2d6d0;
+  background: #fff;
+  z-index: 1;
+}
+
+.orderStepperStep--done .orderStepperDot {
+  border-color: #108910;
+  background: #108910;
+}
+
+.orderStepperStep--current .orderStepperDot {
+  border-color: #108910;
+  background: #fff;
+  box-shadow: 0 0 0 4px #e8f8ec;
+}
+
+.orderStepperStep--current:last-child .orderStepperDot {
+  background: #108910;
+}
+
+.orderStepperLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6b6b6b;
+  text-align: center;
+}
+
+.orderStepperStep--done .orderStepperLabel,
+.orderStepperStep--current .orderStepperLabel {
+  color: #108910;
+}
+
+.ordersSectionTitle {
+  margin: 22px 0 10px;
+  font-size: 1rem;
+}
+
+.orderItemList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderItem {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.orderItemThumb,
+.orderItemThumbPlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f0f3ee;
+  flex-shrink: 0;
+}
+
+.orderItemBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderItemName {
+  font-weight: 600;
+}
+
+.orderItemMeta {
+  color: #4f4f4f;
+  font-size: 0.85rem;
+}
+
+.ordersHomeBtn {
+  max-width: 240px;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
