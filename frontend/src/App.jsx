@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage from "./OrdersPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -10,6 +11,8 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const CHECKOUT_SNAPSHOT_KEY = "freshcart-checkout-snapshot";
+const ORDERS_STORAGE_KEY = "freshcart-orders";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -91,6 +94,11 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+function readOrdersStorage() {
+  const parsed = readJsonStorage(ORDERS_STORAGE_KEY, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function snapshotProduct(product) {
   return {
     id: product.id,
@@ -159,6 +167,7 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [orders, setOrders] = useState(() => readOrdersStorage());
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +198,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +258,27 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === ORDERS_STORAGE_KEY) {
+        let remote = [];
+        try {
+          const parsed = JSON.parse(event.newValue || "[]");
+          remote = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          remote = [];
+        }
+        setOrders((prev) => {
+          const bySession = new Map();
+          for (const order of [...remote, ...prev]) {
+            if (order?.session_id && !bySession.has(order.session_id)) {
+              bySession.set(order.session_id, order);
+            }
+          }
+          return Array.from(bySession.values()).sort(
+            (a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0)
+          );
+        });
       }
     }
     window.addEventListener("storage", onStorage);
@@ -498,6 +532,27 @@ export default function App() {
     });
   }
 
+  function persistOrder(order) {
+    if (!order?.session_id) {
+      return;
+    }
+    setOrders((prev) => {
+      const fromStorage = readOrdersStorage();
+      const bySession = new Map();
+      for (const entry of [...fromStorage, ...prev]) {
+        if (entry?.session_id && !bySession.has(entry.session_id)) {
+          bySession.set(entry.session_id, entry);
+        }
+      }
+      if (!bySession.has(order.session_id)) {
+        bySession.set(order.session_id, order);
+      }
+      return Array.from(bySession.values()).sort(
+        (a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0)
+      );
+    });
+  }
+
   function addToCart(product) {
     const productId = typeof product === "string" ? product : product.id;
     const catalogProduct =
@@ -648,17 +703,27 @@ export default function App() {
     });
     try {
       window.sessionStorage.setItem(CHECKOUT_STORE_KEY, activeStoreId);
+      const checkoutItems = cartItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image_url: item.image_url
+      }));
+      window.sessionStorage.setItem(
+        CHECKOUT_SNAPSHOT_KEY,
+        JSON.stringify({
+          store_id: activeStoreId,
+          store_name: selectedStore?.name || activeStoreId,
+          items: checkoutItems,
+          total: cartTotal
+        })
+      );
       const response = await fetch(`${API_BASE}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image_url: item.image_url
-          })),
+          items: checkoutItems,
           store_id: activeStoreId,
           store_name: selectedStore?.name || activeStoreId
         })
@@ -673,6 +738,7 @@ export default function App() {
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       setError(err.message || "Unable to start checkout.");
       setCheckoutState({
         type: "error",
@@ -699,6 +765,7 @@ export default function App() {
           message: "Checkout canceled. Your cart is still saved."
         });
         window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+        window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
       }
 
       if (status === "success" && sessionId) {
@@ -713,12 +780,59 @@ export default function App() {
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
             });
+            let checkoutSnapshot = null;
+            try {
+              checkoutSnapshot = JSON.parse(
+                window.sessionStorage.getItem(CHECKOUT_SNAPSHOT_KEY) || "null"
+              );
+            } catch {
+              checkoutSnapshot = null;
+            }
             const checkedOutStoreId =
-              session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
+              session.store_id ||
+              checkoutSnapshot?.store_id ||
+              window.sessionStorage.getItem(CHECKOUT_STORE_KEY) ||
+              "";
+            const snapshotItems = Array.isArray(checkoutSnapshot?.items)
+              ? checkoutSnapshot.items
+              : (() => {
+                  const storedCarts = readJsonStorage(CARTS_STORAGE_KEY, {});
+                  const storedCatalog = readJsonStorage(CART_CATALOG_STORAGE_KEY, {});
+                  const storeCart = checkedOutStoreId ? storedCarts[checkedOutStoreId] || {} : {};
+                  return buildCartItems(storeCart, storedCatalog, {}).map((item) => ({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    image_url: item.image_url
+                  }));
+                })();
+            const cartSubtotal =
+              typeof checkoutSnapshot?.total === "number"
+                ? checkoutSnapshot.total
+                : snapshotItems.reduce(
+                    (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
+                    0
+                  );
+            const stripeTotal =
+              typeof session.amount_total === "number" ? session.amount_total / 100 : null;
+            persistOrder({
+              session_id: session.session_id || sessionId,
+              store_id: checkedOutStoreId || session.store_id || "",
+              store_name:
+                session.store_name ||
+                checkoutSnapshot?.store_name ||
+                checkedOutStoreId ||
+                "Store",
+              items: snapshotItems,
+              total: stripeTotal ?? cartSubtotal,
+              created_at: new Date().toISOString()
+            });
             if (checkedOutStoreId) {
               clearStoreCart(checkedOutStoreId);
             }
             window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
+            window.sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
           } else {
             setCheckoutState({
               type: "warning",
@@ -837,6 +951,16 @@ export default function App() {
           FreshCart
         </button>
         <div className="rightNav">
+          <button
+            className="navLink"
+            onClick={() => {
+              setError("");
+              setActivePage("orders");
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
           <button
             className="navLink"
             onClick={() => {
@@ -1164,6 +1288,13 @@ export default function App() {
             </div>
           </form>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orders}
+          onBack={() => setActivePage(selectedStore ? "shop" : "stores")}
+        />
       ) : null}
 
       {cartPanel === "hub" ? (
