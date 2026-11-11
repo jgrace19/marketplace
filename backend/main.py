@@ -85,6 +85,16 @@ def _require_store(store_id: str) -> str:
     return cleaned
 
 
+def _metadata_value(metadata, key: str) -> str:
+    if not metadata:
+        return ""
+    try:
+        value = metadata[key]
+    except (KeyError, TypeError):
+        return ""
+    return str(value) if value else ""
+
+
 class CheckoutItem(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
@@ -234,6 +244,6 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "customer_email": session.customer_details.email if session.customer_details else None,
         "amount_total": session.amount_total,
         "currency": session.currency,
-        "store_id": metadata.get("store_id") or "",
-        "store_name": metadata.get("store_name") or "",
+        "store_id": _metadata_value(metadata, "store_id"),
+        "store_name": _metadata_value(metadata, "store_name"),
     }

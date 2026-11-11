@@ -1,0 +1,30 @@
+id: order-history
+description: |
+  Order history and live status tracker. Should run if the diff touches order
+  persistence after checkout, the Orders page, the status stepper, or shared
+  localStorage helpers used to store orders.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/App.css"
+  - "frontend/src/Orders.jsx"
+  - "frontend/index.html"
+  - "frontend/package.json"
+focus_prompt: |
+  Probe the Orders page and post-checkout order records for bugs. Cover:
+  - Header has an Orders nav link next to Profile. The page lists past orders
+    with store name, date, total, and status.
+  - After a successful paid Stripe checkout, exactly one order is created for
+    that session_id. Reloading with the same success URL must not duplicate it.
+  - A newly placed order starts at status "Placed". While the Orders page is
+    open, the stepper advances on a timer through Shopping and On the way to
+    Delivered without requiring a reload.
+  - Reload the page mid-progress: the same order is still listed and the
+    current stage is preserved (it must not reset to Placed).
+  - Opening an order shows the line items and quantities from the checkout
+    snapshot, matching what was purchased.
+  - Empty state: with no orders in localStorage (`freshcart-orders`), the page
+    should show a clear empty message and must not crash.
+  - Edge cases: an order missing placedAt should still render; an order with
+    an empty items array should show a fallback, not a blank crash; two
+    different session_ids must produce two distinct list rows.
+max_turns: 60
