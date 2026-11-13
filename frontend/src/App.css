@@ -779,6 +779,241 @@ body {
   z-index: 20;
 }
 
+.ordersPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 760px;
+}
+
+.ordersPage h2 {
+  margin: 0;
+}
+
+.ordersPage > p {
+  margin-top: 8px;
+  color: #4f4f4f;
+}
+
+.ordersBackBtn {
+  border: none;
+  background: transparent;
+  color: #108910;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.ordersMeta {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.ordersEmpty {
+  margin: 16px 0;
+  color: #4f4f4f;
+}
+
+.ordersList {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderCard {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #eceeea;
+  border-radius: 16px;
+  padding: 14px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  box-shadow: 0 2px 8px rgba(22, 29, 22, 0.05);
+}
+
+.orderCard:hover {
+  border-color: #108910;
+}
+
+.orderCardMain h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.orderCardDate {
+  margin: 6px 0 0;
+  color: #4f4f4f;
+  font-size: 0.88rem;
+}
+
+.orderCardSide {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.orderStatus {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.orderStatus.active {
+  background: #e8f8ec;
+  color: #108910;
+}
+
+.orderStatus.delivered {
+  background: #f0f3ee;
+  color: #2b2b2b;
+}
+
+.ordersPageBack {
+  max-width: 280px;
+}
+
+.orderStepper {
+  list-style: none;
+  display: flex;
+  margin: 22px 0 8px;
+  padding: 0;
+}
+
+.orderStep {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.orderStep::before,
+.orderStep::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  height: 3px;
+  background: #d2d6d0;
+}
+
+.orderStep::before {
+  left: 0;
+  right: 50%;
+}
+
+.orderStep::after {
+  left: 50%;
+  right: 0;
+}
+
+.orderStep:first-child::before,
+.orderStep:last-child::after {
+  display: none;
+}
+
+.orderStep.done::before,
+.orderStep.done::after,
+.orderStep.current::before {
+  background: #108910;
+}
+
+.orderStepDot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #d2d6d0;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px #d2d6d0;
+  z-index: 1;
+}
+
+.orderStep.done .orderStepDot {
+  background: #108910;
+  box-shadow: 0 0 0 2px #108910;
+}
+
+.orderStep.current .orderStepDot {
+  background: #fff;
+  box-shadow: 0 0 0 2px #108910;
+}
+
+.orderStepLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4f4f4f;
+  text-align: center;
+}
+
+.orderStep.done .orderStepLabel,
+.orderStep.current .orderStepLabel {
+  color: #108910;
+}
+
+.orderItemsHeading {
+  margin: 18px 0 10px;
+  font-size: 1rem;
+}
+
+.orderItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orderItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.orderItemThumb,
+.orderItemThumbPlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f0f3ee;
+  flex-shrink: 0;
+}
+
+.orderItemBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orderItemName {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.orderItemQty {
+  color: #4f4f4f;
+  font-size: 0.85rem;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
