@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
@@ -458,6 +459,76 @@ def get_stores_for_zip(zip_code: Optional[str] = None) -> tuple[str, List[dict]]
 
 def get_store(store_id: str) -> Optional[Store]:
     return STORES.get(store_id)
+
+
+TOMORROW_MORNING_SLOT = "Tomorrow 9–11am"
+TODAY_EVENING_SLOT = "Today 6–8pm"
+
+
+def get_store_payload(store_id: str, zip_code: Optional[str] = None) -> Optional[dict]:
+    _, items = get_stores_for_zip(zip_code)
+    for item in items:
+        if item["id"] == store_id:
+            return item
+    store = get_store(store_id)
+    if store is None:
+        return None
+    return asdict(deepcopy(store))
+
+
+def _parse_eta_hour(eta_label: str) -> Optional[int]:
+    match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", eta_label or "", re.I)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    meridian = match.group(3).lower()
+    if meridian == "pm" and hour != 12:
+        hour += 12
+    elif meridian == "am" and hour == 12:
+        hour = 0
+    return hour
+
+
+def _clock_label(hour_24: int) -> str:
+    hour = hour_24 % 24
+    meridian = "am" if hour < 12 else "pm"
+    hour_12 = hour % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    return f"{hour_12}{meridian}"
+
+
+def _window_label(day: str, start_hour: int, end_hour: int) -> str:
+    start = _clock_label(start_hour)
+    end = _clock_label(end_hour)
+    if start[-2:] == end[-2:]:
+        return f"{day} {start[:-2]}–{end}"
+    return f"{day} {start}–{end}"
+
+
+def get_delivery_slots(store_id: str, zip_code: Optional[str] = None) -> Optional[List[dict]]:
+    payload = get_store_payload(store_id, zip_code)
+    if payload is None:
+        return None
+
+    labels: List[str] = []
+    eta_hour = _parse_eta_hour(str(payload.get("eta_label") or ""))
+    if eta_hour is not None:
+        start_hour = max(eta_hour - 2, 8)
+        labels.append(_window_label("Today", start_hour, eta_hour))
+
+    distance = float(payload.get("distance_mi") or 0)
+    if distance < 2.5 and TODAY_EVENING_SLOT not in labels:
+        labels.append(TODAY_EVENING_SLOT)
+
+    labels.append(TOMORROW_MORNING_SLOT)
+    if distance >= 2.5:
+        labels.append("Tomorrow 4–6pm")
+
+    return [
+        {"id": f"slot-{index}", "label": label}
+        for index, label in enumerate(labels)
+    ]
 
 
 def get_products_for_store(store_id: str, limit: int = 60) -> List[dict]:
