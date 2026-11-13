@@ -49,6 +49,41 @@ kubectl create secret generic datadog-secret -n datadog \
 echo "==> Deploying Datadog Agent (site: $DD_SITE)"
 sed "s|site: us5.datadoghq.com|site: $DD_SITE|" "$K8S_DIR/datadog-agent.yaml" | kubectl apply -f -
 
+echo "==> Reporting deploy start to Cursor Rollouts"
+REPORTER="$K8S_DIR/report-deployment.sh"
+DEPLOY_ENV="local"
+DEPLOY_VERSION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+ROLLOUTS_RUN="k8s/deploy.sh:$(whoami)@$(hostname):$(date -u +%Y%m%dT%H%M%SZ)"
+BACKEND_DEPLOYMENT=""
+FRONTEND_DEPLOYMENT=""
+
+rollouts_report() {
+  local service="$1" deployment="$2"
+  shift 2
+  CHANGE_MONITOR_ENV="$DEPLOY_ENV" CHANGE_MONITOR_SERVICE="$service" \
+    DEPLOY_VERSION="$DEPLOY_VERSION" CHANGE_MONITOR_DEPLOYMENT="$deployment" \
+    CHANGE_MONITOR_ACTOR="$ROLLOUTS_RUN:$service:$DEPLOY_ENV" \
+    "$REPORTER" "$@" || true
+}
+
+rollouts_close_open() {
+  if [[ -n "$BACKEND_DEPLOYMENT" ]]; then
+    rollouts_report marketplace-backend "$BACKEND_DEPLOYMENT" finish "$@"
+    BACKEND_DEPLOYMENT=""
+  fi
+  if [[ -n "$FRONTEND_DEPLOYMENT" ]]; then
+    rollouts_report marketplace-frontend "$FRONTEND_DEPLOYMENT" finish "$@"
+    FRONTEND_DEPLOYMENT=""
+  fi
+}
+trap 'status=$?; rollouts_close_open failed "k8s/deploy.sh exited with status $status"' EXIT
+trap 'rollouts_close_open aborted; trap - EXIT; exit 130' INT TERM
+
+rollouts_report marketplace-backend "" bootstrap
+rollouts_report marketplace-frontend "" bootstrap
+BACKEND_DEPLOYMENT="$(rollouts_report marketplace-backend "" start)"
+FRONTEND_DEPLOYMENT="$(rollouts_report marketplace-frontend "" start)"
+
 echo "==> Deploying app"
 kubectl apply -f "$K8S_DIR/namespace.yaml"
 kubectl create secret generic app-secrets -n marketplace \
@@ -60,8 +95,24 @@ kubectl apply -f "$K8S_DIR/frontend.yaml"
 kubectl apply -f "$K8S_DIR/backend-hpa.yaml"
 
 echo "==> Waiting for rollouts"
-kubectl -n marketplace rollout status deployment/backend --timeout=120s
-kubectl -n marketplace rollout status deployment/frontend --timeout=120s
+ROLLOUT_FAILED=0
+if kubectl -n marketplace rollout status deployment/backend --timeout=120s; then
+  rollouts_report marketplace-backend "$BACKEND_DEPLOYMENT" finish succeeded
+else
+  ROLLOUT_FAILED=1
+  rollouts_report marketplace-backend "$BACKEND_DEPLOYMENT" finish failed "rollout status deployment/backend did not complete"
+fi
+BACKEND_DEPLOYMENT=""
+if kubectl -n marketplace rollout status deployment/frontend --timeout=120s; then
+  rollouts_report marketplace-frontend "$FRONTEND_DEPLOYMENT" finish succeeded
+else
+  ROLLOUT_FAILED=1
+  rollouts_report marketplace-frontend "$FRONTEND_DEPLOYMENT" finish failed "rollout status deployment/frontend did not complete"
+fi
+FRONTEND_DEPLOYMENT=""
+if [[ "$ROLLOUT_FAILED" -ne 0 ]]; then
+  exit 1
+fi
 
 cat <<EOF
 

@@ -118,6 +118,10 @@ Requires `docker`, `kind`, `kubectl`, and `helm`.
 ./k8s/deploy.sh
 ```
 
+   If `CURSOR_API_KEY` is set in `.env`, the script reports each service's deploy
+   to Cursor Rollouts (`k8s/report-deployment.sh`). Without it, the script prints
+   an error and the deploy continues.
+
 3. Open `http://localhost:8080` (backend API at `http://localhost:8000`). Then in Datadog:
 
 - APM: service `marketplace-backend`, env `local`
