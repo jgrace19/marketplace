@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 import os
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 import re
 
 import stripe
@@ -93,10 +93,69 @@ class CheckoutItem(BaseModel):
     image_url: str = ""
 
 
+SubstitutionChoice = Literal["best_match", "no_replace"]
+SUBSTITUTION_DEFAULT: SubstitutionChoice = "best_match"
+SUBSTITUTION_CODES: Dict[str, str] = {"best_match": "b", "no_replace": "n"}
+STRIPE_METADATA_VALUE_LIMIT = 500
+
+
+class SubstitutionPreference(BaseModel):
+    product_id: str = Field(min_length=1, max_length=120)
+    preference: SubstitutionChoice = SUBSTITUTION_DEFAULT
+
+
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    substitutions: List[SubstitutionPreference] = Field(default_factory=list)
+
+
+def _encode_substitutions(
+    items: List[CheckoutItem], substitutions: List[SubstitutionPreference]
+) -> Dict[str, str]:
+    """Build the compact Stripe metadata for per-line substitution preferences.
+
+    Emits one `<product_id>:<code>` pair per line item, in cart order, joined by
+    commas; `b` = best_match (default when a line has no entry), `n` = no_replace.
+    Stripe caps a metadata value at 500 characters, so if the string would exceed
+    that it is cut at a pair boundary and `substitutions_truncated` records how
+    many trailing lines were dropped. Returns {} when the client sent no
+    preferences, which keeps older clients' metadata unchanged.
+    """
+    if not substitutions:
+        return {}
+
+    item_ids = [item.id for item in items]
+    known_ids = set(item_ids)
+    chosen: Dict[str, str] = {}
+    for entry in substitutions:
+        if entry.product_id not in known_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Substitution preference references unknown item '{entry.product_id}'.",
+            )
+        if entry.product_id in chosen:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate substitution preference for item '{entry.product_id}'.",
+            )
+        chosen[entry.product_id] = entry.preference
+
+    pairs = [
+        f"{product_id}:{SUBSTITUTION_CODES[chosen.get(product_id, SUBSTITUTION_DEFAULT)]}"
+        for product_id in item_ids
+    ]
+    kept = len(pairs)
+    encoded = ",".join(pairs)
+    while len(encoded) > STRIPE_METADATA_VALUE_LIMIT and kept > 1:
+        kept -= 1
+        encoded = ",".join(pairs[:kept])
+
+    metadata = {"substitutions": encoded}
+    if kept < len(pairs):
+        metadata["substitutions_truncated"] = str(len(pairs) - kept)
+    return metadata
 
 
 def configure_stripe() -> None:
@@ -164,6 +223,7 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
 
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
+    substitution_metadata = _encode_substitutions(payload.items, payload.substitutions)
     configure_stripe()
     line_items = []
 
@@ -201,6 +261,7 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
+    metadata.update(substitution_metadata)
     if metadata:
         session_kwargs["metadata"] = metadata
 
@@ -236,4 +297,5 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "substitutions": metadata.get("substitutions") or "",
     }

@@ -9,7 +9,13 @@ const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const SUBSTITUTIONS_STORAGE_KEY = "freshcart-substitutions";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const SUBSTITUTION_DEFAULT = "best_match";
+const SUBSTITUTION_OPTIONS = [
+  { value: "best_match", label: "Replace with best match" },
+  { value: "no_replace", label: "Don't replace" }
+];
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -106,16 +112,49 @@ function countItems(cartMap) {
   return Object.values(cartMap || {}).reduce((sum, qty) => sum + (qty || 0), 0);
 }
 
-function buildCartItems(cartMap, cartCatalog, productCatalog) {
+function buildCartItems(cartMap, cartCatalog, productCatalog, storeSubstitutions = {}) {
   return Object.entries(cartMap || {})
     .map(([productId, quantity]) => {
       const product = cartCatalog[productId] || productCatalog[productId];
       if (!product) {
         return null;
       }
-      return { ...product, quantity };
+      return {
+        ...product,
+        quantity,
+        substitution: storeSubstitutions[productId] || SUBSTITUTION_DEFAULT
+      };
     })
     .filter(Boolean);
+}
+
+// Only non-default choices are stored, so a missing key (including carts saved
+// before substitutions existed) always reads as best match.
+function pruneSubstitutions(carts, substitutions) {
+  const next = {};
+  for (const [storeId, prefs] of Object.entries(substitutions)) {
+    const cart = carts[storeId] || {};
+    const kept = {};
+    for (const [productId, preference] of Object.entries(prefs || {})) {
+      if (cart[productId] > 0 && preference !== SUBSTITUTION_DEFAULT) {
+        kept[productId] = preference;
+      }
+    }
+    if (Object.keys(kept).length > 0) {
+      next[storeId] = kept;
+    }
+  }
+  const unchanged =
+    Object.keys(next).length === Object.keys(substitutions).length &&
+    Object.entries(next).every(([storeId, kept]) => {
+      const prev = substitutions[storeId] || {};
+      const prevKeys = Object.keys(prev);
+      return (
+        prevKeys.length === Object.keys(kept).length &&
+        prevKeys.every((productId) => prev[productId] === kept[productId])
+      );
+    });
+  return unchanged ? substitutions : next;
 }
 
 function pruneCartCatalog(carts, catalog) {
@@ -159,6 +198,9 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [substitutions, setSubstitutions] = useState(() =>
+    readJsonStorage(SUBSTITUTIONS_STORAGE_KEY, {})
+  );
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +231,14 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    setSubstitutions((prev) => pruneSubstitutions(carts, prev));
+  }, [carts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SUBSTITUTIONS_STORAGE_KEY, JSON.stringify(substitutions));
+  }, [substitutions]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +295,10 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === SUBSTITUTIONS_STORAGE_KEY) {
+        setSubstitutions(parseStoredObject(event.newValue));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -434,9 +488,11 @@ export default function App() {
   const activeStoreId = selectedStore?.id || "";
   const activeCart = carts[activeStoreId] || {};
 
+  const activeSubstitutions = substitutions[activeStoreId] || {};
+
   const cartItems = useMemo(
-    () => buildCartItems(activeCart, cartCatalog, productCatalog),
-    [activeCart, cartCatalog, productCatalog]
+    () => buildCartItems(activeCart, cartCatalog, productCatalog, activeSubstitutions),
+    [activeCart, cartCatalog, productCatalog, activeSubstitutions]
   );
 
   const cartTotal = useMemo(
@@ -540,6 +596,27 @@ export default function App() {
         delete next[storeId];
       } else {
         next[storeId] = storeCart;
+      }
+      return next;
+    });
+  }
+
+  function setSubstitution(productId, preference, storeId = activeStoreId) {
+    if (!storeId || !productId) {
+      return;
+    }
+    setSubstitutions((prev) => {
+      const storePrefs = { ...(prev[storeId] || {}) };
+      if (preference === SUBSTITUTION_DEFAULT) {
+        delete storePrefs[productId];
+      } else {
+        storePrefs[productId] = preference;
+      }
+      const next = { ...prev };
+      if (Object.keys(storePrefs).length === 0) {
+        delete next[storeId];
+      } else {
+        next[storeId] = storePrefs;
       }
       return next;
     });
@@ -660,7 +737,11 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          substitutions: cartItems.map((item) => ({
+            product_id: item.id,
+            preference: item.substitution
+          }))
         })
       });
       const data = await response.json();
@@ -1189,10 +1270,14 @@ export default function App() {
           items={cartItems}
           subtotal={cartTotal}
           otherCarts={otherOpenCarts}
+          substitutionOptions={SUBSTITUTION_OPTIONS}
           checkoutLoading={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onSubstitutionChange={(productId, preference) =>
+            setSubstitution(productId, preference, selectedStore.id)
+          }
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />
