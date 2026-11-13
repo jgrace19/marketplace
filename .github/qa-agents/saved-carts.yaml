@@ -1,0 +1,32 @@
+id: saved-carts
+description: |
+  Saved-cart API (FE-6). Should run if the diff touches the saved-carts
+  router, the database layer, shopper-header handling, or the catalog
+  lookups the API prices saved items against.
+paths:
+  - "backend/saved_carts.py"
+  - "backend/db.py"
+  - "backend/validation.py"
+  - "backend/stores.py"
+  - "backend/main.py"
+  - "backend/requirements.txt"
+  - ".env"
+focus_prompt: |
+  Probe the saved-cart API directly over HTTP (there is no UI yet). Run the
+  backend with `SAVED_CARTS_ENABLED=true` and cover:
+  - Without the flag every `/api/saved-carts` route must return 404.
+  - Every route requires `X-Shopper-Id`; missing or blank must be 400.
+  - POST `/api/saved-carts` with `{ store_id, items: [{ product_id, quantity }], name? }`
+    returns 201 with `item_count`, `subtotal`, `expires_at`, and per-item
+    `unit_price_at_save`. Products from another store, duplicate product_ids,
+    unknown stores, and quantities outside 1–99 must be rejected.
+  - The 11th save for one shopper is 409; deleting one frees a slot; another
+    shopper's cap is independent.
+  - GET lists newest first and prices `subtotal` at current catalog prices.
+  - Shopper B must get 404 (not 403, not 200) when restoring or deleting
+    shopper A's cart, and must never see it in GET.
+  - POST `/{id}/restore` returns `{ store_id, items, skipped }` where items
+    match the storefront cart shape (`{ ...product, quantity }`), then the
+    saved cart is gone (second restore is 404).
+  - DELETE `/{id}` is 204 with an empty body; repeat is 404.
+max_turns: 40
