@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import hashlib
 import os
-from typing import List, Optional
+from typing import List, Literal, Optional
 import re
+from urllib.parse import quote
 
 import stripe
 from dotenv import load_dotenv
@@ -93,10 +95,43 @@ class CheckoutItem(BaseModel):
     image_url: str = ""
 
 
+class SubstitutionPreference(BaseModel):
+    product_id: str = Field(min_length=1, max_length=120)
+    preference: Literal["best_match", "no_replace"]
+
+
 class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    substitutions: Optional[List[SubstitutionPreference]] = None
+
+
+_METADATA_VALUE_LIMIT = 500
+_PREFERENCE_CODES = {"best_match": "b", "no_replace": "n"}
+
+
+def _compact_substitutions(
+    items: List[CheckoutItem], substitutions: List[SubstitutionPreference]
+) -> str:
+    """One preference per cart line, in line order.
+
+    ``quote(product_id):b`` is best match (the default when a line is omitted).
+    ``quote(product_id):n`` is don't replace. If that string would exceed
+    Stripe's 500-character metadata value limit, return ``sha256:<hex>`` of
+    the full string instead of dropping lines. Session status echoes the
+    stored value unchanged, hash included.
+    """
+    chosen = {entry.product_id: entry.preference for entry in substitutions}
+    parts = []
+    for item in items:
+        code = _PREFERENCE_CODES[chosen.get(item.id, "best_match")]
+        parts.append(f"{quote(item.id, safe='')}:{code}")
+    compact = ",".join(parts)
+    if len(compact) <= _METADATA_VALUE_LIMIT:
+        return compact
+    digest = hashlib.sha256(compact.encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
 
 
 def configure_stripe() -> None:
@@ -201,6 +236,8 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
+    if payload.substitutions is not None:
+        metadata["substitutions"] = _compact_substitutions(payload.items, payload.substitutions)
     if metadata:
         session_kwargs["metadata"] = metadata
 
@@ -236,4 +273,5 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "substitutions": metadata.get("substitutions") or "",
     }

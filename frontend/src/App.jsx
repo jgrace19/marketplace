@@ -9,6 +9,7 @@ const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const SUBSTITUTIONS_STORAGE_KEY = "freshcart-substitutions";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
@@ -118,6 +119,71 @@ function buildCartItems(cartMap, cartCatalog, productCatalog) {
     .filter(Boolean);
 }
 
+function normalizeSubstitutions(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+  const next = {};
+  for (const [storeId, prefs] of Object.entries(parsed)) {
+    if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) {
+      continue;
+    }
+    const kept = {};
+    for (const [productId, preference] of Object.entries(prefs)) {
+      if (preference === "no_replace") {
+        kept[productId] = "no_replace";
+      }
+    }
+    if (Object.keys(kept).length > 0) {
+      next[storeId] = kept;
+    }
+  }
+  return next;
+}
+
+function readSubstitutions() {
+  return normalizeSubstitutions(readJsonStorage(SUBSTITUTIONS_STORAGE_KEY, {}));
+}
+
+function pruneSubstitutions(carts, substitutions) {
+  const next = {};
+  for (const [storeId, prefs] of Object.entries(substitutions || {})) {
+    const cart = carts?.[storeId];
+    if (!cart || !prefs) {
+      continue;
+    }
+    const kept = {};
+    for (const [productId, preference] of Object.entries(prefs)) {
+      if (cart[productId] && preference === "no_replace") {
+        kept[productId] = "no_replace";
+      }
+    }
+    if (Object.keys(kept).length > 0) {
+      next[storeId] = kept;
+    }
+  }
+  return next;
+}
+
+function sameSubstitutions(left, right) {
+  const leftIds = Object.keys(left);
+  if (leftIds.length !== Object.keys(right).length) {
+    return false;
+  }
+  return leftIds.every((storeId) => {
+    const prefs = left[storeId];
+    const other = right[storeId];
+    if (!other) {
+      return false;
+    }
+    const productIds = Object.keys(prefs);
+    return (
+      productIds.length === Object.keys(other).length &&
+      productIds.every((productId) => prefs[productId] === other[productId])
+    );
+  });
+}
+
 function pruneCartCatalog(carts, catalog) {
   const keptIds = new Set();
   for (const cart of Object.values(carts)) {
@@ -159,6 +225,7 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [substitutions, setSubstitutions] = useState(readSubstitutions);
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +256,17 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    setSubstitutions((prev) => {
+      const next = pruneSubstitutions(carts, prev);
+      return sameSubstitutions(prev, next) ? prev : next;
+    });
+  }, [carts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SUBSTITUTIONS_STORAGE_KEY, JSON.stringify(substitutions));
+  }, [substitutions]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +323,10 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === SUBSTITUTIONS_STORAGE_KEY) {
+        setSubstitutions(normalizeSubstitutions(parseStoredObject(event.newValue)));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -435,8 +517,13 @@ export default function App() {
   const activeCart = carts[activeStoreId] || {};
 
   const cartItems = useMemo(
-    () => buildCartItems(activeCart, cartCatalog, productCatalog),
-    [activeCart, cartCatalog, productCatalog]
+    () =>
+      buildCartItems(activeCart, cartCatalog, productCatalog).map((item) => ({
+        ...item,
+        substitution:
+          substitutions[activeStoreId]?.[item.id] === "no_replace" ? "no_replace" : "best_match"
+      })),
+    [activeCart, cartCatalog, productCatalog, substitutions, activeStoreId]
   );
 
   const cartTotal = useMemo(
@@ -540,6 +627,27 @@ export default function App() {
         delete next[storeId];
       } else {
         next[storeId] = storeCart;
+      }
+      return next;
+    });
+  }
+
+  function setLineSubstitution(storeId, productId, preference) {
+    if (!storeId || !productId) {
+      return;
+    }
+    setSubstitutions((prev) => {
+      const storePrefs = { ...(prev[storeId] || {}) };
+      if (preference === "no_replace") {
+        storePrefs[productId] = "no_replace";
+      } else {
+        delete storePrefs[productId];
+      }
+      const next = { ...prev };
+      if (Object.keys(storePrefs).length === 0) {
+        delete next[storeId];
+      } else {
+        next[storeId] = storePrefs;
       }
       return next;
     });
@@ -660,7 +768,11 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          substitutions: cartItems.map((item) => ({
+            product_id: item.id,
+            preference: item.substitution === "no_replace" ? "no_replace" : "best_match"
+          }))
         })
       });
       const data = await response.json();
@@ -1193,6 +1305,9 @@ export default function App() {
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onSubstitutionChange={(productId, preference) =>
+            setLineSubstitution(selectedStore.id, productId, preference)
+          }
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />

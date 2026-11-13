@@ -36,4 +36,11 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Each cart line has a substitution choice: Replace with best match (default)
+    or Don't replace. A new line defaults to best match. Don't replace persists
+    across refresh in `freshcart-substitutions` and stays scoped to that store
+    cart (the same product in another store stays best match). Removing a line
+    drops its preference; changing quantity keeps it. Checkout session metadata
+    includes one preference per line in that store cart (`product_id:b` or
+    `product_id:n`), and session-status echoes the stored substitutions string.
 max_turns: 60

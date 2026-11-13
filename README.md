@@ -24,8 +24,8 @@ Catalog data is a static grocery fallback partitioned by store (see `backend/sto
 | `GET` | `/api/stores?zip=` | Store list for a canned zip (`10002`, `94107`, `60614`) |
 | `GET` | `/api/products?store_id=&query=&limit=` | **Requires** `store_id` |
 | `GET` | `/api/recommendations?store_id=` | Store-scoped deals |
-| `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata |
-| `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id` from session metadata |
+| `POST` | `/api/checkout/session` | Stripe Checkout; optional `store_id` / `store_name` metadata. Optional `substitutions` (`product_id` + `best_match` or `no_replace`) is stored as one `id:b` or `id:n` entry per line. A value over 500 characters is replaced with `sha256:<hex>` of the full list. |
+| `GET` | `/api/checkout/session-status?session_id=` | Verify payment; returns `store_id`, `store_name`, and `substitutions` from session metadata |
 
 ## Run Backend
 
