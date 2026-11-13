@@ -161,6 +161,10 @@ export default function App() {
   );
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
   const [checkoutState, setCheckoutState] = useState({
@@ -173,6 +177,9 @@ export default function App() {
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
+  const promoRequestIdRef = useRef(0);
+  const promoInFlightRef = useRef(false);
+  const checkoutInFlightRef = useRef(false);
   const selectedZipRef = useRef(selectedZip);
   const storesZipRef = useRef("");
   const pendingContinueRef = useRef(null);
@@ -444,6 +451,28 @@ export default function App() {
     [cartItems]
   );
 
+  const promoMatchesSubtotal =
+    appliedPromo &&
+    Math.round(appliedPromo.subtotal * 100) === Math.round(cartTotal * 100);
+  const cartDiscount = promoMatchesSubtotal ? appliedPromo.discount_amount : 0;
+  const discountedCartTotal = Math.max(0, cartTotal - cartDiscount);
+
+  useEffect(() => {
+    promoRequestIdRef.current += 1;
+    setPromoInput("");
+    setAppliedPromo(null);
+    setPromoError("");
+    setPromoLoading(false);
+    promoInFlightRef.current = false;
+  }, [activeStoreId]);
+
+  useEffect(() => {
+    if (appliedPromo && !promoMatchesSubtotal) {
+      setAppliedPromo(null);
+      setPromoError("");
+    }
+  }, [appliedPromo, promoMatchesSubtotal]);
+
   const cartCount = useMemo(
     () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
     [carts]
@@ -635,11 +664,60 @@ export default function App() {
     return data;
   }
 
-  async function startCheckout() {
-    if (cartItems.length === 0 || !activeStoreId) {
+  async function applyPromo() {
+    const code = promoInput.trim();
+    if (!code) {
+      setPromoError("Enter a promo code.");
       return;
     }
 
+    const requestId = ++promoRequestIdRef.current;
+    promoInFlightRef.current = true;
+    setPromoLoading(true);
+    setPromoError("");
+    try {
+      const params = new URLSearchParams({
+        code,
+        subtotal: cartTotal.toFixed(2)
+      });
+      const response = await fetch(`${API_BASE}/api/promo/validate?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) {
+        const detail = data.detail;
+        throw new Error(
+          (detail && typeof detail === "object" ? detail.message : detail) ||
+            "Unable to apply that promo code."
+        );
+      }
+      if (requestId !== promoRequestIdRef.current) {
+        return;
+      }
+      setAppliedPromo(data);
+      setPromoInput(data.code);
+    } catch (err) {
+      if (requestId !== promoRequestIdRef.current) {
+        return;
+      }
+      setPromoError(err.message || "Unable to apply that promo code.");
+    } finally {
+      if (requestId === promoRequestIdRef.current) {
+        promoInFlightRef.current = false;
+        setPromoLoading(false);
+      }
+    }
+  }
+
+  async function startCheckout() {
+    if (
+      cartItems.length === 0 ||
+      !activeStoreId ||
+      promoInFlightRef.current ||
+      checkoutInFlightRef.current
+    ) {
+      return;
+    }
+
+    checkoutInFlightRef.current = true;
     setCheckoutLoading(true);
     setError("");
     setCheckoutState({
@@ -660,12 +738,20 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          promo_code: promoMatchesSubtotal ? appliedPromo.code : null
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || "Checkout failed.");
+        const detail = data.detail;
+        if (detail && typeof detail === "object" && detail.message) {
+          setPromoError(detail.message);
+        }
+        throw new Error(
+          (detail && typeof detail === "object" ? detail.message : detail) ||
+            "Checkout failed."
+        );
       }
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
@@ -679,6 +765,7 @@ export default function App() {
         message: "Checkout could not be started. Please try again."
       });
     } finally {
+      checkoutInFlightRef.current = false;
       setCheckoutLoading(false);
     }
   }
@@ -1188,11 +1275,23 @@ export default function App() {
           supportsPickup={Boolean(selectedStore.supports_pickup)}
           items={cartItems}
           subtotal={cartTotal}
+          discount={cartDiscount}
+          total={discountedCartTotal}
+          promoInput={promoInput}
+          appliedPromo={promoMatchesSubtotal ? appliedPromo : null}
+          promoError={promoError}
+          promoLoading={promoLoading}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
+          cartLocked={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onPromoInputChange={(value) => {
+            setPromoInput(value);
+            setPromoError("");
+          }}
+          onApplyPromo={applyPromo}
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />

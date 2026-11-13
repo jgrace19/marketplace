@@ -12,11 +12,20 @@ export default function CartDrawer({
   supportsPickup,
   items,
   subtotal,
+  discount,
+  total,
+  promoInput,
+  appliedPromo,
+  promoError,
+  promoLoading,
   otherCarts,
   checkoutLoading,
+  cartLocked,
   onClose,
   onIncrease,
   onDecrease,
+  onPromoInputChange,
+  onApplyPromo,
   onCheckout,
   onSwitchCart
 }) {
@@ -26,7 +35,13 @@ export default function CartDrawer({
 
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label={`${storeName} cart`}>
-      <button type="button" className="cartOverlayBackdrop" onClick={onClose} aria-label="Close" />
+      <button
+        type="button"
+        className="cartOverlayBackdrop"
+        onClick={onClose}
+        aria-label="Close"
+        disabled={cartLocked}
+      />
       <aside className="cartDrawerPanel">
         <header className="cartDrawerHeader">
           <div>
@@ -34,7 +49,13 @@ export default function CartDrawer({
             <p className="cartsHubSubhead">Shopping in {zip}</p>
             <p className="cartDrawerFulfillment">{fulfillment}</p>
           </div>
-          <button type="button" className="cartPanelClose" onClick={onClose} aria-label="Close cart">
+          <button
+            type="button"
+            className="cartPanelClose"
+            onClick={onClose}
+            aria-label="Close cart"
+            disabled={cartLocked}
+          >
             ×
           </button>
         </header>
@@ -47,6 +68,7 @@ export default function CartDrawer({
                 type="button"
                 className="cartSwitcherChip"
                 onClick={() => onSwitchCart(cart.storeId)}
+                disabled={cartLocked}
               >
                 {cart.storeName} +{cart.itemCount}
               </button>
@@ -73,11 +95,17 @@ export default function CartDrawer({
                       type="button"
                       onClick={() => onDecrease(item.id)}
                       aria-label={item.quantity <= 1 ? `Remove ${item.name}` : `Decrease ${item.name}`}
+                      disabled={cartLocked}
                     >
                       {item.quantity <= 1 ? "×" : "−"}
                     </button>
                     <span>{item.quantity}</span>
-                    <button type="button" onClick={() => onIncrease(item)} aria-label={`Increase ${item.name}`}>
+                    <button
+                      type="button"
+                      onClick={() => onIncrease(item)}
+                      aria-label={`Increase ${item.name}`}
+                      disabled={cartLocked}
+                    >
                       +
                     </button>
                   </div>
@@ -88,14 +116,64 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
-          <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
+          <form
+            className="promoForm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onApplyPromo();
+            }}
+          >
+            <label htmlFor="promo-code">Promo code</label>
+            <div className="promoControls">
+              <input
+                id="promo-code"
+                value={promoInput}
+                onChange={(event) => onPromoInputChange(event.target.value)}
+                placeholder="Enter code"
+                autoComplete="off"
+                disabled={cartLocked}
+              />
+              <button
+                type="submit"
+                disabled={promoLoading || cartLocked || items.length === 0}
+              >
+                {promoLoading ? "Applying..." : "Apply"}
+              </button>
+            </div>
+            {promoError ? (
+              <p className="promoError" role="alert">
+                {promoError}
+              </p>
+            ) : null}
+            {appliedPromo && !promoError ? (
+              <p className="promoSuccess" role="status">
+                {appliedPromo.code} applied · {appliedPromo.description}
+              </p>
+            ) : null}
+          </form>
+          <div className="cartSummary">
+            <div>
+              <span>Subtotal</span>
+              <span>{currency(subtotal)}</span>
+            </div>
+            {discount > 0 ? (
+              <div className="cartDiscount">
+                <span>Discount</span>
+                <span>−{currency(discount)}</span>
+              </div>
+            ) : null}
+            <div className="cartTotal">
+              <span>Total</span>
+              <span>{currency(total)}</span>
+            </div>
+          </div>
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutLoading || promoLoading || items.length === 0}
           >
-            {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
+            {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(total)}`}
           </button>
         </footer>
       </aside>
