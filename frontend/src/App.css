@@ -314,11 +314,39 @@ body {
   box-shadow: 0 2px 8px rgba(22, 29, 22, 0.05);
 }
 
-.card img {
+.cardMedia {
+  position: relative;
+}
+
+.card img,
+.cardMedia img {
   width: 100%;
   height: 145px;
   object-fit: cover;
   border-radius: 12px;
+  display: block;
+}
+
+.bookmarkBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #108910;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(22, 29, 22, 0.12);
+}
+
+.bookmarkBtn:hover,
+.bookmarkBtnActive {
+  background: #108910;
+  color: #fff;
 }
 
 .card h3 {
@@ -779,6 +807,289 @@ body {
   z-index: 20;
 }
 
+.listsPage {
+  background: #fff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.listsPageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.listsPageHeader h2 {
+  margin: 0;
+}
+
+.listsPageHeader p {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+}
+
+.listsBackBtn {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.listsNotice {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e8f8ec;
+  color: #176a2d;
+  font-size: 0.9rem;
+}
+
+.listsLayout {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 18px;
+}
+
+.listsSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.listsCreateBtn {
+  margin-top: 0;
+}
+
+.listsSidebarList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listsSidebarItem {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d2d6d0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.listsSidebarItemActive {
+  border-color: #108910;
+  background: #eef8ee;
+}
+
+.listsSidebarName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listsSidebarCount {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e7efe7;
+  color: #176a2d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.listsEmptyHint {
+  margin: 0;
+  color: #5c5c5c;
+  font-size: 0.92rem;
+}
+
+.listsDetail {
+  border: 1px solid #e9ece8;
+  border-radius: 14px;
+  padding: 16px;
+  min-height: 280px;
+}
+
+.listsDetailEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  color: #5c5c5c;
+}
+
+.listsDetailHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.listsRenameLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.listsRenameLabel input {
+  border: 1px solid #d2d6d0;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.listsDetailActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.listsDetailActions .checkoutBtn,
+.listsDetailActions .secondaryBtn {
+  margin-top: 0;
+}
+
+.listsItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.listsItemRow {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #eceeea;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.listsItemThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.listsItemMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.listsItemMeta strong {
+  font-size: 0.95rem;
+}
+
+.listsItemMeta span {
+  font-size: 0.85rem;
+  color: #5c5c5c;
+}
+
+.listsRemoveBtn {
+  border: 1px solid #d2d6d0;
+  background: #fff;
+  color: #1f1f1f;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font: inherit;
+  font-weight: 600;
+}
+
+.listPickerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.listPickerPanel {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e9ece8;
+  padding: 18px;
+  box-shadow: 0 16px 40px rgba(22, 29, 22, 0.18);
+}
+
+.listPickerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.listPickerHeader h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.listPickerHeader p {
+  margin: 6px 0 0;
+  color: #5c5c5c;
+}
+
+.listPickerOptions {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listPickerOption {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d2d6d0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.listPickerOption:hover {
+  border-color: #108910;
+  background: #eef8ee;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
@@ -786,6 +1097,22 @@ body {
 
   .cartsHubPanel,
   .cartDrawerPanel {
+    width: 100%;
+  }
+
+  .listsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .listsDetailActions {
+    grid-template-columns: 1fr;
+  }
+
+  .listsPageHeader {
+    flex-direction: column;
+  }
+
+  .listsBackBtn {
     width: 100%;
   }
 }
