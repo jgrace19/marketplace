@@ -1,0 +1,25 @@
+id: shopping-lists
+description: |
+  Named persistent shopping lists flow. Should run if the diff touches the Lists
+  page, product-card bookmark button, list localStorage persistence, or add-all
+  to cart from a list.
+paths:
+  - "frontend/src/App.jsx"
+  - "frontend/src/ListsPage.jsx"
+  - "frontend/src/App.css"
+focus_prompt: |
+  Probe the shopping lists feature for bugs. Cover the verification user flow:
+  - Open Lists via the header nav. Create a list named "Weekly staples".
+  - Go to GreenMart (or another active store), open the product grid, and use
+    the product-card bookmark button to save 3 different items into that list.
+  - Navigate away from Lists (e.g. to stores or profile) and back. Confirm the
+    list still shows exactly those 3 items. Then fully reload the page and
+    confirm the same 3 items persist via localStorage (`freshcart-lists`).
+  - Note the cart badge count, open the list, tap "Add all to cart", and confirm
+    the badge increases by 3 (items merge into the active store's cart).
+  - Remove one item from the list and confirm the list item count updates.
+  - Edge cases: empty create input should not create a list; "Add all to cart"
+    should be disabled on an empty list; bookmark popover with no lists should
+    show "No lists yet — create one on the Lists page"; bookmarking the same
+    product twice into one list should be a no-op (no duplicate qty bump).
+max_turns: 60
