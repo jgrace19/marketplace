@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "frontend/src/savedCartsApi.js"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -36,4 +37,10 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Save for later and the Carts hub "Saved for later" section render only when
+    VITE_SAVED_CARTS_ENABLED is the string "true". With the flag on, the Save
+    for later button is hidden while the open cart is empty and sits beside
+    checkout once the cart has items. Restore adds saved quantities onto the
+    existing store cart and caps each line at 99. Skipped restore items show a
+    notice. Do not file a missing-button bug when the flag is off.
 max_turns: 60
