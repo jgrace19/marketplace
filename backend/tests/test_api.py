@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 import main
-from stores import DEFAULT_ZIP, STORES, SUPPORTED_ZIPS, ZIP_STORE_OVERRIDES
+from stores import DEFAULT_ZIP, STORES, SUPPORTED_ZIPS, ZIP_STORE_OVERRIDES, get_delivery_slots
 
 
 def _store_id() -> str:
@@ -21,6 +21,25 @@ def _sample_item(**overrides: object) -> dict:
     }
     item.update(overrides)
     return item
+
+
+def _tomorrow_slot(store_id: str, zip_code: str = DEFAULT_ZIP) -> dict:
+    slots = get_delivery_slots(store_id, zip_code) or []
+    return next(slot for slot in slots if slot["label"] == "Tomorrow 9–11am")
+
+
+def _checkout_body(store_id: str | None = None, **overrides: object) -> dict:
+    resolved = store_id or _store_id()
+    slot = _tomorrow_slot(resolved)
+    body = {
+        "items": [_sample_item()],
+        "store_id": resolved,
+        "store_name": STORES[resolved].name,
+        "delivery_slot": slot["label"],
+        "zip": DEFAULT_ZIP,
+    }
+    body.update(overrides)
+    return body
 
 
 def test_health(client):
@@ -187,9 +206,41 @@ def test_checkout_rejects_invalid_cart(client, payload):
 
 
 def test_checkout_requires_stripe_key(client):
-    response = client.post("/api/checkout/session", json={"items": [_sample_item()]})
+    response = client.post("/api/checkout/session", json=_checkout_body())
     assert response.status_code == 500
     assert "STRIPE_SECRET_KEY" in response.json()["detail"]
+
+
+def test_delivery_slots_are_store_specific(client):
+    greenmart = client.get("/api/stores/greenmart/slots", params={"zip": "10002"}).json()
+    quickstop = client.get("/api/stores/quickstop/slots", params={"zip": "10002"}).json()
+
+    assert greenmart["store_id"] == "greenmart"
+    assert greenmart["zip"] == "10002"
+    assert greenmart["count"] == len(greenmart["items"]) > 0
+    assert any(slot["label"] == "Tomorrow 9–11am" for slot in greenmart["items"])
+    assert any(slot["label"] == "Tomorrow 9–11am" for slot in quickstop["items"])
+    assert [slot["label"] for slot in greenmart["items"]] != [
+        slot["label"] for slot in quickstop["items"]
+    ]
+
+
+def test_delivery_slots_follow_zip_eta_and_distance(client):
+    home = client.get("/api/stores/freshfare/slots", params={"zip": "10002"}).json()
+    bay = client.get("/api/stores/freshfare/slots", params={"zip": "94107"}).json()
+
+    assert bay["zip"] == "94107"
+    assert [slot["label"] for slot in home["items"]] != [slot["label"] for slot in bay["items"]]
+    assert any(slot["id"] == "tomorrow-9-11" for slot in bay["items"])
+
+
+def test_delivery_slots_require_known_store(client):
+    missing = client.get("/api/stores/missing-store/slots")
+    assert missing.status_code == 404
+    assert "missing-store" in missing.json()["detail"]
+
+    blank = client.get("/api/stores/%20/slots")
+    assert blank.status_code == 400
 
 
 def test_checkout_builds_line_items_in_cents(client, monkeypatch):
@@ -197,6 +248,7 @@ def test_checkout_builds_line_items_in_cents(client, monkeypatch):
     store_id = _store_id()
     store_name = STORES[store_id].name
     fake = SimpleNamespace(url="https://checkout.example.test/s", id="cs_test_123456")
+    slot = _tomorrow_slot(store_id)
     payload = {
         "items": [
             _sample_item(price=3.49, quantity=2, image_url="https://example.test/item.png"),
@@ -204,6 +256,8 @@ def test_checkout_builds_line_items_in_cents(client, monkeypatch):
         ],
         "store_id": store_id,
         "store_name": store_name,
+        "delivery_slot": slot["id"],
+        "zip": DEFAULT_ZIP,
     }
 
     with patch.object(main.stripe.checkout.Session, "create", return_value=fake) as create:
@@ -213,7 +267,12 @@ def test_checkout_builds_line_items_in_cents(client, monkeypatch):
     assert response.json() == {"checkout_url": fake.url, "session_id": fake.id}
     kwargs = create.call_args.kwargs
     assert kwargs["mode"] == "payment"
-    assert kwargs["metadata"] == {"store_id": store_id, "store_name": store_name}
+    assert kwargs["metadata"] == {
+        "store_id": store_id,
+        "store_name": store_name,
+        "delivery_slot": slot["label"],
+        "delivery_slot_id": slot["id"],
+    }
     assert kwargs["success_url"] == (
         f"{main.FRONTEND_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
     )
@@ -227,20 +286,35 @@ def test_checkout_builds_line_items_in_cents(client, monkeypatch):
     assert "images" not in second["price_data"]["product_data"]
 
 
-def test_checkout_omits_metadata_without_store(client, monkeypatch):
+def test_checkout_requires_store_and_known_slot(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
-    fake = SimpleNamespace(url="https://checkout.example.test/s", id="cs_test_123456")
+    store_id = _store_id()
 
-    with patch.object(main.stripe.checkout.Session, "create", return_value=fake) as create:
-        response = client.post("/api/checkout/session", json={"items": [_sample_item()]})
+    with patch.object(main.stripe.checkout.Session, "create") as create:
+        missing_store = client.post(
+            "/api/checkout/session",
+            json={"items": [_sample_item()], "delivery_slot": "Tomorrow 9–11am"},
+        )
+        unknown_slot = client.post(
+            "/api/checkout/session",
+            json=_checkout_body(store_id, delivery_slot="Next week sometime"),
+        )
+        other_store_slot = client.post(
+            "/api/checkout/session",
+            json=_checkout_body("quickstop", delivery_slot="Today 5–7pm", zip="10002"),
+        )
 
-    assert response.status_code == 200
-    assert "metadata" not in create.call_args.kwargs
+    assert missing_store.status_code == 400
+    assert "store_id" in missing_store.json()["detail"]
+    assert unknown_slot.status_code == 400
+    assert "delivery window" in unknown_slot.json()["detail"]
+    assert other_store_slot.status_code == 400
+    create.assert_not_called()
 
 
 def test_checkout_rejects_sub_cent_price(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
-    payload = {"items": [_sample_item(price=0.001, quantity=1)]}
+    payload = _checkout_body(items=[_sample_item(price=0.001, quantity=1)])
 
     with patch.object(main.stripe.checkout.Session, "create") as create:
         response = client.post("/api/checkout/session", json=payload)
@@ -258,7 +332,7 @@ def test_checkout_stripe_error_is_bad_gateway(client, monkeypatch):
         "create",
         side_effect=RuntimeError("stripe down"),
     ):
-        response = client.post("/api/checkout/session", json={"items": [_sample_item()]})
+        response = client.post("/api/checkout/session", json=_checkout_body())
 
     assert response.status_code == 502
     assert "stripe down" in response.json()["detail"]
@@ -293,7 +367,12 @@ def test_session_status_returns_payment_fields(client, monkeypatch):
         customer_details=SimpleNamespace(email="buyer@example.com"),
         amount_total=698,
         currency="usd",
-        metadata={"store_id": store_id, "store_name": store_name},
+        metadata={
+            "store_id": store_id,
+            "store_name": store_name,
+            "delivery_slot": "Tomorrow 9–11am",
+            "delivery_slot_id": "tomorrow-9-11",
+        },
     )
 
     with patch.object(main.stripe.checkout.Session, "retrieve", return_value=fake) as retrieve:
@@ -312,6 +391,8 @@ def test_session_status_returns_payment_fields(client, monkeypatch):
         "currency": "usd",
         "store_id": store_id,
         "store_name": store_name,
+        "delivery_slot": "Tomorrow 9–11am",
+        "delivery_slot_id": "tomorrow-9-11",
     }
     retrieve.assert_called_once_with("cs_test_123456")
 
@@ -340,6 +421,8 @@ def test_session_status_handles_missing_customer_and_metadata(client, monkeypatc
     assert body["amount_total"] is None
     assert body["store_id"] == ""
     assert body["store_name"] == ""
+    assert body["delivery_slot"] == ""
+    assert body["delivery_slot_id"] == ""
 
 
 def test_session_status_stripe_error_is_not_found(client, monkeypatch):

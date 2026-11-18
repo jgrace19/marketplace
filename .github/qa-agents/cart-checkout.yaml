@@ -10,6 +10,7 @@ paths:
   - "frontend/src/App.css"
   - "frontend/src/CartDrawer.jsx"
   - "frontend/src/CartsHub.jsx"
+  - "backend/stores.py"
   - "frontend/index.html"
   - "frontend/package.json"
   - ".env"
@@ -36,4 +37,12 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Delivery windows: with items in the drawer and no slot selected, checkout
+    stays disabled and a hint asks the shopper to choose a delivery window.
+    Slots come from GET /api/stores/{id}/slots and differ by store (and zip).
+    Every store offers "Tomorrow 9–11am". Selecting that chip enables checkout.
+    The chosen label is sent as delivery_slot and must be stored on the Stripe
+    session metadata, returned by session-status as delivery_slot, and echoed
+    on the paid success banner (for example "placed for Tomorrow 9–11am").
+    A missing or unknown slot must not create a Stripe session.
 max_turns: 60
