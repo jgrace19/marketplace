@@ -5,6 +5,7 @@ description: |
   success/cancel flow, or shared product rendering used by the cart.
 paths:
   - "backend/main.py"
+  - "backend/stores.py"
   - "backend/requirements.txt"
   - "frontend/src/App.jsx"
   - "frontend/src/App.css"
@@ -31,6 +32,16 @@ focus_prompt: |
     backend session-status endpoint reports `payment_status === "paid"`. If the
     notice appears under any other payment_status, file a bug. Only the
     checked-out store's cart should clear; other store carts remain.
+  - Delivery windows: with items in the drawer, checkout stays disabled and a
+    hint asks the shopper to choose a window until a slot chip is selected.
+    Slots come from GET /api/stores/{id}/slots and differ by store (ETA and
+    distance). Every store offers "Tomorrow 9–11am". Selecting that chip
+    enables checkout. The POST /api/checkout/session body includes
+    delivery_slot, and Stripe metadata plus GET /api/checkout/session-status
+    echo delivery_slot (the label) and delivery_slot_id. After a paid return,
+    the success banner must include that label from session-status
+    ("Delivery window: …"). A missing or unknown slot must be rejected by the
+    session endpoint.
   - Edge cases: rapid double-click on the Checkout button (should not create
     two Stripe sessions), decrementing a cart item from 1 (item should leave
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),

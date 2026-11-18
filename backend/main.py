@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from stores import (
+    delivery_slots_for_store,
+    find_delivery_slot,
     get_products_for_store,
     get_store,
     get_stores_for_zip,
@@ -97,6 +99,8 @@ class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    delivery_slot: Optional[str] = None
+    zip: Optional[str] = None
 
 
 def configure_stripe() -> None:
@@ -162,9 +166,20 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
     }
 
 
+@app.get("/api/stores/{store_id}/slots")
+def list_store_slots(store_id: str, zip: str = Query(default="")) -> dict:
+    resolved_store = _require_store(store_id)
+    resolved_zip, slots = delivery_slots_for_store(resolved_store, zip)
+    return {
+        "store_id": resolved_store,
+        "zip": resolved_zip,
+        "items": slots,
+        "count": len(slots),
+    }
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
-    configure_stripe()
     line_items = []
 
     for item in payload.items:
@@ -190,20 +205,37 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
             }
         )
 
+    store_id = (payload.store_id or "").strip()
+    if not store_id:
+        raise HTTPException(status_code=400, detail="store_id is required.")
+    if get_store(store_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown store_id '{store_id}'.")
+    slot_value = (payload.delivery_slot or "").strip()
+    if not slot_value:
+        raise HTTPException(status_code=400, detail="A delivery window is required.")
+    slot = find_delivery_slot(store_id, slot_value, payload.zip)
+    if slot is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a delivery window offered by this store.",
+        )
+
     session_kwargs = {
         "mode": "payment",
         "line_items": line_items,
         "success_url": f"{FRONTEND_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{FRONTEND_URL}/?checkout=cancel",
     }
-    metadata = {}
-    if payload.store_id:
-        metadata["store_id"] = payload.store_id
-    if payload.store_name:
-        metadata["store_name"] = payload.store_name
-    if metadata:
-        session_kwargs["metadata"] = metadata
+    metadata = {
+        "store_id": store_id,
+        "delivery_slot": slot["label"],
+        "delivery_slot_id": slot["id"],
+    }
+    if payload.store_name and payload.store_name.strip():
+        metadata["store_name"] = payload.store_name.strip()
+    session_kwargs["metadata"] = metadata
 
+    configure_stripe()
     try:
         session = stripe.checkout.Session.create(**session_kwargs)
     except Exception as exc:
@@ -236,4 +268,6 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "delivery_slot": metadata.get("delivery_slot") or "",
+        "delivery_slot_id": metadata.get("delivery_slot_id") or "",
     }
