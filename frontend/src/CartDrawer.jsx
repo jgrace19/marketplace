@@ -13,10 +13,14 @@ export default function CartDrawer({
   items,
   subtotal,
   otherCarts,
+  slots,
+  slotsLoading,
+  selectedSlotId,
   checkoutLoading,
   onClose,
   onIncrease,
   onDecrease,
+  onSelectSlot,
   onCheckout,
   onSwitchCart
 }) {
@@ -88,12 +92,39 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
+          {items.length > 0 ? (
+            <div className="cartDrawerSlots">
+              <span className="cartDrawerSlotsLabel">Delivery window</span>
+              {slotsLoading ? (
+                <p className="cartDrawerSlotsLoading">Loading delivery windows…</p>
+              ) : slots.length === 0 ? (
+                <p className="cartDrawerSlotsLoading">No delivery windows available.</p>
+              ) : (
+                <div className="chips cartDrawerSlotChips">
+                  {slots.map((slot) => (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      className={`chip ${selectedSlotId === slot.id ? "chipActive" : ""}`}
+                      aria-pressed={selectedSlotId === slot.id}
+                      onClick={() => onSelectSlot(slot.id)}
+                    >
+                      {slot.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
           <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
+          {!selectedSlotId && items.length > 0 ? (
+            <p className="cartDrawerSlotHint">Choose a delivery window to continue</p>
+          ) : null}
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutLoading || items.length === 0 || !selectedSlotId}
           >
             {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
           </button>

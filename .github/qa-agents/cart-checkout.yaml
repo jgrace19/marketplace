@@ -36,4 +36,11 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Delivery window picker: with items in the cart drawer, checkout stays
+    disabled until a delivery window chip is selected (hint visible).
+    `GET /api/stores/{id}/slots?zip=` should return store-specific windows;
+    megavalue at zip 94107 must not include a Today slot (distance over 3 mi)
+    but must still offer Tomorrow 9–11am. After a full Stripe checkout, the
+    success banner echoes the chosen slot from session-status. POST
+    `/api/checkout/session` with an invalid `delivery_slot_id` must return 400.
 max_turns: 60

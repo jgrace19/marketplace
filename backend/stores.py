@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
@@ -462,3 +463,103 @@ def get_store(store_id: str) -> Optional[Store]:
 
 def get_products_for_store(store_id: str, limit: int = 60) -> List[dict]:
     return [p for p in STORE_PRODUCTS if p["store_id"] == store_id][:limit]
+
+
+_ETA_PATTERN = re.compile(r"^By\s+(\d{1,2}):(\d{2})\s*(am|pm)\s*$", re.IGNORECASE)
+
+TOMORROW_SLOT_WINDOWS = (
+    (9, 0, 11, 0, "Tomorrow 9–11am"),
+    (12, 0, 14, 0, "Tomorrow 12–2pm"),
+    (18, 0, 20, 0, "Tomorrow 6–8pm"),
+)
+
+
+def _minutes_since_midnight(hour: int, minute: int, meridiem: str) -> int:
+    h = hour % 12
+    if meridiem.lower() == "pm":
+        h += 12
+    return h * 60 + minute
+
+
+def _format_minutes(minutes: int) -> str:
+    minutes = minutes % (24 * 60)
+    hour, minute = divmod(minutes, 60)
+    meridiem = "am" if hour < 12 else "pm"
+    display_hour = hour % 12
+    if display_hour == 0:
+        display_hour = 12
+    if minute:
+        return f"{display_hour}:{minute:02d}{meridiem}"
+    return f"{display_hour}{meridiem}"
+
+
+def _format_range_label(start_min: int, end_min: int, day_prefix: str) -> str:
+    return f"{day_prefix} {_format_minutes(start_min)}–{_format_minutes(end_min)}"
+
+
+def _slot_id(prefix: str, start_min: int, end_min: int) -> str:
+    def part(m: int) -> str:
+        h, mi = divmod(m % (24 * 60), 60)
+        return f"{h:02d}{mi:02d}"
+
+    return f"{prefix}-{part(start_min)}-{part(end_min)}"
+
+
+def get_store_for_zip(store_id: str, zip_code: Optional[str] = None) -> Optional[dict]:
+    resolved, items = get_stores_for_zip(zip_code)
+    for item in items:
+        if item["id"] == store_id:
+            payload = dict(item)
+            payload["zip"] = resolved
+            return payload
+    store = get_store(store_id)
+    if not store:
+        return None
+    payload = asdict(deepcopy(store))
+    payload["zip"] = normalize_zip(zip_code)
+    return payload
+
+
+def get_delivery_slots(store_id: str, zip_code: Optional[str] = None) -> List[dict]:
+    store = get_store_for_zip(store_id, zip_code)
+    if not store:
+        return []
+
+    slots: List[dict] = []
+    distance = float(store.get("distance_mi") or 0.0)
+    eta_label = (store.get("eta_label") or "").strip()
+    match = _ETA_PATTERN.match(eta_label)
+
+    if match and distance <= 3.0:
+        end_min = _minutes_since_midnight(int(match.group(1)), int(match.group(2)), match.group(3))
+        start_min = end_min - 120
+        if start_min < 0:
+            start_min = 0
+        slot_id = _slot_id("today", start_min, end_min)
+        label = _format_range_label(start_min, end_min, "Today")
+        slots.append({"id": slot_id, "label": label, "day": "today"})
+
+    for start_h, start_m, end_h, end_m, label in TOMORROW_SLOT_WINDOWS:
+        start_min = start_h * 60 + start_m
+        end_min = end_h * 60 + end_m
+        slots.append(
+            {
+                "id": _slot_id("tomorrow", start_min, end_min),
+                "label": label,
+                "day": "tomorrow",
+            }
+        )
+
+    return slots
+
+
+def find_delivery_slot(
+    store_id: str, zip_code: Optional[str], slot_id: str
+) -> Optional[dict]:
+    cleaned = (slot_id or "").strip()
+    if not cleaned:
+        return None
+    for slot in get_delivery_slots(store_id, zip_code):
+        if slot["id"] == cleaned:
+            return slot
+    return None

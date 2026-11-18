@@ -167,6 +167,9 @@ export default function App() {
     type: "idle",
     message: ""
   });
+  const [deliverySlots, setDeliverySlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlots, setSelectedSlots] = useState({});
   const [profile, setProfile] = useState(createEmptyProfile());
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
@@ -444,6 +447,67 @@ export default function App() {
     [cartItems]
   );
 
+  const selectedDeliverySlotId = selectedSlots[activeStoreId] || "";
+
+  useEffect(() => {
+    if (cartPanel !== "drawer" || !activeStoreId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadSlots() {
+      setSlotsLoading(true);
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/stores/${encodeURIComponent(activeStoreId)}/slots?zip=${encodeURIComponent(selectedZip)}`
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Unable to load delivery windows.");
+        }
+        if (cancelled) {
+          return;
+        }
+        const items = data.items || [];
+        setDeliverySlots(items);
+        setSelectedSlots((previous) => {
+          const current = previous[activeStoreId];
+          if (!current) {
+            return previous;
+          }
+          if (items.some((slot) => slot.id === current)) {
+            return previous;
+          }
+          const next = { ...previous };
+          delete next[activeStoreId];
+          return next;
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setDeliverySlots([]);
+          setError(err.message || "Unable to load delivery windows.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSlotsLoading(false);
+        }
+      }
+    }
+
+    loadSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, [cartPanel, activeStoreId, selectedZip]);
+
+  function selectDeliverySlot(storeId, slotId) {
+    setSelectedSlots((previous) => ({
+      ...previous,
+      [storeId]: slotId
+    }));
+  }
+
   const cartCount = useMemo(
     () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
     [carts]
@@ -639,6 +703,9 @@ export default function App() {
     if (cartItems.length === 0 || !activeStoreId) {
       return;
     }
+    if (!selectedDeliverySlotId) {
+      return;
+    }
 
     setCheckoutLoading(true);
     setError("");
@@ -660,7 +727,9 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          delivery_slot_id: selectedDeliverySlotId,
+          zip: selectedZip
         })
       });
       const data = await response.json();
@@ -709,14 +778,26 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            const slotLabel = (session.delivery_slot_label || "").trim();
+            const successMessage = slotLabel
+              ? `Payment confirmed. Your grocery order is placed for delivery ${slotLabel}.`
+              : "Payment confirmed. Your grocery order is placed.";
             setCheckoutState({
               type: "success",
-              message: "Payment confirmed. Your grocery order is placed."
+              message: successMessage
             });
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
             if (checkedOutStoreId) {
               clearStoreCart(checkedOutStoreId);
+              setSelectedSlots((previous) => {
+                if (!previous[checkedOutStoreId]) {
+                  return previous;
+                }
+                const next = { ...previous };
+                delete next[checkedOutStoreId];
+                return next;
+              });
             }
             window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
           } else {
@@ -1189,10 +1270,14 @@ export default function App() {
           items={cartItems}
           subtotal={cartTotal}
           otherCarts={otherOpenCarts}
+          slots={deliverySlots}
+          slotsLoading={slotsLoading}
+          selectedSlotId={selectedDeliverySlotId}
           checkoutLoading={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onSelectSlot={(slotId) => selectDeliverySlot(selectedStore.id, slotId)}
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />

@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from stores import (
+    find_delivery_slot,
+    get_delivery_slots,
     get_products_for_store,
     get_store,
     get_stores_for_zip,
@@ -97,6 +99,8 @@ class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    delivery_slot_id: Optional[str] = None
+    zip: Optional[str] = None
 
 
 def configure_stripe() -> None:
@@ -144,6 +148,17 @@ def list_products(
     return {"items": [asdict(p) for p in products], "count": len(products), "store_id": resolved_store}
 
 
+@app.get("/api/stores/{store_id}/slots")
+def list_store_slots(
+    store_id: str,
+    zip: str = Query(default="", min_length=0),
+) -> dict:
+    resolved_store = _require_store(store_id)
+    resolved_zip, _ = get_stores_for_zip(zip)
+    items = get_delivery_slots(resolved_store, zip)
+    return {"items": items, "store_id": resolved_store, "zip": resolved_zip}
+
+
 @app.get("/api/recommendations")
 def get_recommendations(store_id: str = Query(default="")) -> dict:
     """Return today's personalized deals for a store (lowest-priced items)."""
@@ -162,8 +177,26 @@ def get_recommendations(store_id: str = Query(default="")) -> dict:
     }
 
 
+def _resolve_delivery_slot(payload: CheckoutRequest) -> dict:
+    slot_id = (payload.delivery_slot_id or "").strip()
+    if not slot_id:
+        raise HTTPException(status_code=400, detail="delivery_slot_id is required.")
+    store_id = (payload.store_id or "").strip()
+    if not store_id:
+        raise HTTPException(status_code=400, detail="store_id is required for delivery slot checkout.")
+    resolved_store = _require_store(store_id)
+    slot = find_delivery_slot(resolved_store, payload.zip, slot_id)
+    if not slot:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown delivery slot '{slot_id}'.",
+        )
+    return slot
+
+
 @app.post("/api/checkout/session")
 def create_checkout_session(payload: CheckoutRequest) -> dict:
+    delivery_slot = _resolve_delivery_slot(payload)
     configure_stripe()
     line_items = []
 
@@ -201,8 +234,9 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
-    if metadata:
-        session_kwargs["metadata"] = metadata
+    metadata["delivery_slot_id"] = delivery_slot["id"]
+    metadata["delivery_slot_label"] = delivery_slot["label"]
+    session_kwargs["metadata"] = metadata
 
     try:
         session = stripe.checkout.Session.create(**session_kwargs)
@@ -236,4 +270,6 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "delivery_slot_id": metadata.get("delivery_slot_id") or "",
+        "delivery_slot_label": metadata.get("delivery_slot_label") or "",
     }
