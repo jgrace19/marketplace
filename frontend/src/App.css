@@ -618,6 +618,34 @@ body {
   background: #fff;
 }
 
+.cartDrawerSlots {
+  margin-bottom: 10px;
+}
+
+.cartDrawerSlotsLabel {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4a554a;
+  margin-bottom: 6px;
+}
+
+.cartDrawerSlotChips {
+  margin-bottom: 0;
+}
+
+.cartDrawerSlotsLoading {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: #6b746b;
+}
+
+.cartDrawerSlotHint {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: #b45309;
+}
+
 .checkoutBtn {
   margin-top: 10px;
   width: 100%;
