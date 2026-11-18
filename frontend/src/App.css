@@ -304,6 +304,7 @@ body {
 }
 
 .card {
+  position: relative;
   background: #ffffff;
   border-radius: 16px;
   border: 1px solid #eceeea;
@@ -312,6 +313,97 @@ body {
   flex-direction: column;
   gap: 8px;
   box-shadow: 0 2px 8px rgba(22, 29, 22, 0.05);
+}
+
+.bookmarkAnchor {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+}
+
+.bookmarkBtn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #108910;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(22, 29, 22, 0.16);
+}
+
+.bookmarkBtnOn {
+  background: #108910;
+  color: #ffffff;
+}
+
+.bookmarkIcon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.bookmarkMenu {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  width: 210px;
+  background: #ffffff;
+  border: 1px solid #e3e6e0;
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 10px 24px rgba(22, 29, 22, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bookmarkMenu button,
+.bookmarkCreate button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.bookmarkMenu button:hover,
+.bookmarkMenuOn {
+  background: #f0f8e8;
+}
+
+.bookmarkCreate p {
+  margin: 0 0 6px;
+  min-height: 0;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.bookmarkCreate input {
+  width: 100%;
+  border: 1px solid #d2d6d0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  margin-bottom: 6px;
+}
+
+.bookmarkCreate button {
+  background: #108910;
+  color: #ffffff;
+  text-align: center;
+}
+
+.navLinkActive {
+  border-color: #108910;
+  color: #108910;
+  background: #f0f8e8;
 }
 
 .card img {
@@ -779,9 +871,256 @@ body {
   z-index: 20;
 }
 
+.listsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.listsHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-end;
+  background: #ffffff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.listsHeader h2 {
+  margin: 0;
+}
+
+.listsHeader p {
+  margin: 8px 0 0;
+  color: #4f4f4f;
+  max-width: 460px;
+}
+
+.listsCreate {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.listsCreate label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.listsCreate input,
+.listsRename input {
+  border: 1px solid #d2d6d0;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font: inherit;
+  font-weight: 400;
+  min-width: 200px;
+}
+
+.listsPrimary {
+  border: none;
+  background: #108910;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 11px 16px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.listsPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.listsEmpty,
+.listsEmptyDetail {
+  background: #ffffff;
+  border: 1px dashed #d2d6d0;
+  border-radius: 16px;
+  padding: 28px 20px;
+  color: #4f4f4f;
+}
+
+.listsEmpty p,
+.listsEmptyDetail {
+  margin: 0;
+}
+
+.listsLayout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.listsNav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listsNavItem {
+  background: #ffffff;
+  border: 1px solid #e9ece8;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.listsNavItemActive {
+  border-color: #108910;
+}
+
+.listsNavSelect {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 12px 12px 4px;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.listsNavSelect span {
+  font-weight: 700;
+}
+
+.listsNavSelect small {
+  color: #5c5c5c;
+}
+
+.listsNavActions {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.listsNavActions button,
+.listsRename button,
+.listsRemove {
+  border: none;
+  background: transparent;
+  color: #3d4a3d;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.listsRemove {
+  color: #912525;
+}
+
+.listsRename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  align-items: center;
+}
+
+.listsRename input {
+  min-width: 0;
+  flex: 1;
+}
+
+.listsDetail {
+  background: #ffffff;
+  border: 1px solid #e9ece8;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.listsDetailHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.listsDetailHeader h3 {
+  margin: 0;
+}
+
+.listsDetailHeader p {
+  margin: 6px 0 0;
+  color: #5c5c5c;
+  font-size: 0.9rem;
+}
+
+.listsItems {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listsItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #eef1ec;
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.listsItem img,
+.listsItemPlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #f3f5f1;
+  flex: none;
+}
+
+.listsItemMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.listsItemMeta span {
+  color: #5c5c5c;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
 @media (max-width: 720px) {
   .profileGridRow {
     grid-template-columns: 1fr;
+  }
+
+  .listsHeader,
+  .listsDetailHeader,
+  .listsCreate {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .listsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .listsCreate input {
+    min-width: 0;
   }
 
   .cartsHubPanel,
