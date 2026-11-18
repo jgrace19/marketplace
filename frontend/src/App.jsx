@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import OrdersPage from "./OrdersPage";
+import {
+  CHECKOUT_DRAFTS_KEY,
+  ORDERS_STORAGE_KEY,
+  ORDER_STAGES,
+  buildOrderRecord,
+  orderStageIndex,
+  parseOrders,
+  snapshotOrderItems,
+  upsertOrder
+} from "./orders";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -91,6 +102,34 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+function readCheckoutDrafts() {
+  const stored = readJsonStorage(CHECKOUT_DRAFTS_KEY, {});
+  if (!stored || Array.isArray(stored)) {
+    return {};
+  }
+  return stored;
+}
+
+function saveCheckoutDraft(draft) {
+  if (!draft?.sessionId) {
+    return;
+  }
+  const drafts = readCheckoutDrafts();
+  drafts[draft.sessionId] = draft;
+  window.localStorage.setItem(CHECKOUT_DRAFTS_KEY, JSON.stringify(drafts));
+}
+
+function takeCheckoutDraft(sessionId) {
+  const drafts = readCheckoutDrafts();
+  const draft = drafts[sessionId] || null;
+  if (!draft) {
+    return null;
+  }
+  delete drafts[sessionId];
+  window.localStorage.setItem(CHECKOUT_DRAFTS_KEY, JSON.stringify(drafts));
+  return draft;
+}
+
 function snapshotProduct(product) {
   return {
     id: product.id,
@@ -171,6 +210,9 @@ export default function App() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileAvatar, setProfileAvatar] = useState(CARTOON_AVATARS[0]);
+  const [orders, setOrders] = useState(() => parseOrders(readJsonStorage(ORDERS_STORAGE_KEY, [])));
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [orderClock, setOrderClock] = useState(() => Date.now());
   const storesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
   const selectedZipRef = useRef(selectedZip);
@@ -189,6 +231,26 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    const stillActive = (now) =>
+      orders.some((order) => orderStageIndex(order, now) < ORDER_STAGES.length - 1);
+    if (!stillActive(Date.now())) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setOrderClock(now);
+      if (!stillActive(now)) {
+        window.clearInterval(timer);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [orders]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -624,6 +686,22 @@ export default function App() {
     closeCartPanel();
   }
 
+  function commitPaidOrder(session, sessionId) {
+    const key = session.session_id || sessionId;
+    if (!key) {
+      return;
+    }
+    const draft = readCheckoutDrafts()[key] || null;
+    const existing = parseOrders(readJsonStorage(ORDERS_STORAGE_KEY, []));
+    const next = upsertOrder(
+      existing,
+      buildOrderRecord({ ...session, session_id: key }, draft)
+    );
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(next));
+    setOrders(next);
+    takeCheckoutDraft(key);
+  }
+
   async function verifyCheckout(sessionId) {
     const response = await fetch(
       `${API_BASE}/api/checkout/session-status?session_id=${encodeURIComponent(sessionId)}`
@@ -670,6 +748,12 @@ export default function App() {
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
       }
+      saveCheckoutDraft({
+        sessionId: data.session_id,
+        storeId: activeStoreId,
+        storeName: selectedStore?.name || activeStoreId,
+        items: snapshotOrderItems(cartItems)
+      });
       window.location.assign(data.checkout_url);
     } catch (err) {
       window.sessionStorage.removeItem(CHECKOUT_STORE_KEY);
@@ -709,6 +793,7 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            commitPaidOrder(session, sessionId);
             setCheckoutState({
               type: "success",
               message: "Payment confirmed. Your grocery order is placed."
@@ -838,7 +923,20 @@ export default function App() {
         </button>
         <div className="rightNav">
           <button
-            className="navLink"
+            type="button"
+            className={`navLink${activePage === "orders" ? " active" : ""}`}
+            onClick={() => {
+              setError("");
+              setSelectedOrderId(null);
+              setActivePage("orders");
+              closeCartPanel();
+            }}
+          >
+            Orders
+          </button>
+          <button
+            type="button"
+            className={`navLink${activePage === "profile" ? " active" : ""}`}
             onClick={() => {
               setError("");
               setActivePage("profile");
@@ -1057,6 +1155,21 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "orders" ? (
+        <OrdersPage
+          orders={orders}
+          now={orderClock}
+          selectedOrderId={selectedOrderId}
+          stageIndexFor={orderStageIndex}
+          onSelect={setSelectedOrderId}
+          onBack={() => setSelectedOrderId(null)}
+          onLeave={() => {
+            setSelectedOrderId(null);
+            setActivePage("stores");
+          }}
+        />
       ) : null}
 
       {activePage === "profile" ? (
