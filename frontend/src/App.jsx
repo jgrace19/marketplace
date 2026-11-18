@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CartDrawer from "./CartDrawer";
 import CartsHub from "./CartsHub";
+import ListsPage from "./ListsPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 const PROFILE_STORAGE_KEY = "freshcart-profile";
@@ -9,6 +10,8 @@ const ZIP_STORAGE_KEY = "freshcart-zip";
 const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
+const LISTS_STORAGE_KEY = "freshcart-lists";
+const LIST_NAME_LIMIT = 40;
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
@@ -102,6 +105,72 @@ function snapshotProduct(product) {
   };
 }
 
+function createListId() {
+  return `list-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeListItem(item) {
+  if (!item || typeof item !== "object" || typeof item.id !== "string" || typeof item.name !== "string") {
+    return null;
+  }
+  if (typeof item.store_id !== "string" || !item.store_id) {
+    return null;
+  }
+  const price = Number(item.price);
+  return {
+    id: item.id,
+    name: item.name,
+    price: Number.isFinite(price) ? price : 0,
+    image_url: typeof item.image_url === "string" ? item.image_url : "",
+    store_id: item.store_id,
+    description: typeof item.description === "string" ? item.description : ""
+  };
+}
+
+function normalizeList(list) {
+  if (!list || typeof list !== "object" || typeof list.id !== "string" || typeof list.name !== "string") {
+    return null;
+  }
+  const name = list.name.trim();
+  if (!name) {
+    return null;
+  }
+  const items = Array.isArray(list.items) ? list.items.map(normalizeListItem).filter(Boolean) : [];
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      continue;
+    }
+    seen.add(item.id);
+    unique.push(item);
+  }
+  return { id: list.id, name, items: unique };
+}
+
+function normalizeListsState(raw) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const lists = Array.isArray(source.lists) ? source.lists.map(normalizeList).filter(Boolean) : [];
+  const activeListId = lists.some((list) => list.id === source.activeListId)
+    ? source.activeListId
+    : lists[0]?.id || null;
+  return { lists, activeListId };
+}
+
+function BookmarkIcon({ filled }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="bookmarkIcon">
+      <path
+        d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-3.5L5 21V4.5a1 1 0 0 1 1-1z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function countItems(cartMap) {
   return Object.values(cartMap || {}).reduce((sum, qty) => sum + (qty || 0), 0);
 }
@@ -159,6 +228,11 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [listsState, setListsState] = useState(() =>
+    normalizeListsState(readJsonStorage(LISTS_STORAGE_KEY, { lists: [], activeListId: null }))
+  );
+  const [listsNotice, setListsNotice] = useState(null);
+  const [bookmarkProduct, setBookmarkProduct] = useState(null);
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +263,25 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LISTS_STORAGE_KEY, JSON.stringify(listsState));
+  }, [listsState]);
+
+  useEffect(() => {
+    if (!bookmarkProduct) {
+      return undefined;
+    }
+    function onPointerDown(event) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-bookmark-root]")) {
+        return;
+      }
+      setBookmarkProduct(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [bookmarkProduct]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +338,10 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === LISTS_STORAGE_KEY) {
+        setListsState(normalizeListsState(parseStoredObject(event.newValue)));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -495,6 +592,168 @@ export default function App() {
       const next = { ...prev };
       delete next[storeId];
       return next;
+    });
+  }
+
+  function validateListName(name, ignoreId = null) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setListsNotice({ type: "error", message: "Give the list a name." });
+      return "";
+    }
+    if (trimmed.length > LIST_NAME_LIMIT) {
+      setListsNotice({
+        type: "error",
+        message: `List names can be up to ${LIST_NAME_LIMIT} characters.`
+      });
+      return "";
+    }
+    const duplicate = listsState.lists.some(
+      (list) => list.id !== ignoreId && list.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (duplicate) {
+      setListsNotice({ type: "error", message: "You already have a list with that name." });
+      return "";
+    }
+    return trimmed;
+  }
+
+  function createList(name, productToAdd = null) {
+    const trimmed = validateListName(name);
+    if (!trimmed) {
+      return false;
+    }
+    const id = createListId();
+    const items = productToAdd ? [snapshotProduct(productToAdd)] : [];
+    setListsState((prev) => ({
+      activeListId: id,
+      lists: [...prev.lists, { id, name: trimmed, items }]
+    }));
+    setListsNotice({
+      type: "success",
+      message: productToAdd
+        ? `Created “${trimmed}” and saved ${productToAdd.name}.`
+        : `Created “${trimmed}”.`
+    });
+    setBookmarkProduct(null);
+    return true;
+  }
+
+  function renameList(listId, name) {
+    const trimmed = validateListName(name, listId);
+    if (!trimmed) {
+      return false;
+    }
+    setListsState((prev) => ({
+      ...prev,
+      lists: prev.lists.map((list) => (list.id === listId ? { ...list, name: trimmed } : list))
+    }));
+    setListsNotice({ type: "success", message: `Renamed the list to “${trimmed}”.` });
+    return true;
+  }
+
+  function deleteList(listId) {
+    const list = listsState.lists.find((entry) => entry.id === listId);
+    if (!list) {
+      return;
+    }
+    if (!window.confirm(`Delete “${list.name}”? Items on this list will be removed.`)) {
+      return;
+    }
+    setListsState((prev) => {
+      const lists = prev.lists.filter((entry) => entry.id !== listId);
+      return {
+        lists,
+        activeListId: prev.activeListId === listId ? lists[0]?.id || null : prev.activeListId
+      };
+    });
+    setListsNotice({ type: "info", message: `Deleted “${list.name}”.` });
+  }
+
+  function selectList(listId) {
+    setListsState((prev) => ({ ...prev, activeListId: listId }));
+    setListsNotice(null);
+  }
+
+  function toggleListItem(listId, product) {
+    const snapshot = snapshotProduct(product);
+    setListsState((prev) => ({
+      ...prev,
+      activeListId: listId,
+      lists: prev.lists.map((list) => {
+        if (list.id !== listId) {
+          return list;
+        }
+        const exists = list.items.some((item) => item.id === snapshot.id);
+        return {
+          ...list,
+          items: exists
+            ? list.items.filter((item) => item.id !== snapshot.id)
+            : [...list.items, snapshot]
+        };
+      })
+    }));
+  }
+
+  function removeListItem(listId, productId) {
+    setListsState((prev) => ({
+      ...prev,
+      lists: prev.lists.map((list) =>
+        list.id === listId
+          ? { ...list, items: list.items.filter((item) => item.id !== productId) }
+          : list
+      )
+    }));
+  }
+
+  function productListIds(productId) {
+    return listsState.lists
+      .filter((list) => list.items.some((item) => item.id === productId))
+      .map((list) => list.id);
+  }
+
+  function handleBookmark(product) {
+    if (listsState.lists.length === 1) {
+      const list = listsState.lists[0];
+      const alreadySaved = list.items.some((item) => item.id === product.id);
+      if (!alreadySaved) {
+        toggleListItem(list.id, product);
+      }
+      setBookmarkProduct(null);
+      return;
+    }
+    setBookmarkProduct((current) => (current?.id === product.id ? null : product));
+  }
+
+  function addListToCart(listId) {
+    const list = listsState.lists.find((entry) => entry.id === listId);
+    if (!list) {
+      return;
+    }
+    if (!selectedStore?.id) {
+      setListsNotice({
+        type: "error",
+        message: "Choose a store first. Add all sends this list to that store’s cart."
+      });
+      return;
+    }
+    const matching = list.items.filter((item) => item.store_id === selectedStore.id);
+    if (matching.length === 0) {
+      setListsNotice({
+        type: "warning",
+        message: `Nothing on this list is from ${selectedStore.name}.`
+      });
+      return;
+    }
+    for (const item of matching) {
+      addToCart(item);
+    }
+    const skipped = list.items.length - matching.length;
+    setListsNotice({
+      type: "success",
+      message: skipped
+        ? `Added ${matching.length} ${matching.length === 1 ? "item" : "items"} to your ${selectedStore.name} cart. ${skipped} from other stores stayed off this cart.`
+        : `Added ${matching.length} ${matching.length === 1 ? "item" : "items"} to your ${selectedStore.name} cart.`
     });
   }
 
@@ -838,6 +1097,18 @@ export default function App() {
         </button>
         <div className="rightNav">
           <button
+            type="button"
+            className={`navLink ${activePage === "lists" ? "navLinkActive" : ""}`}
+            onClick={() => {
+              setError("");
+              setBookmarkProduct(null);
+              setActivePage("lists");
+              closeCartPanel();
+            }}
+          >
+            Lists
+          </button>
+          <button
             className="navLink"
             onClick={() => {
               setError("");
@@ -1009,8 +1280,63 @@ export default function App() {
             <section className="productsGrid">
               {products.map((product) => {
                 const qty = quantityForProduct(product);
+                const savedListIds = productListIds(product.id);
+                const onList = savedListIds.length > 0;
+                const menuOpen = bookmarkProduct?.id === product.id;
                 return (
                   <article className="card" key={product.id}>
+                    <div className="bookmarkAnchor" data-bookmark-root>
+                      <button
+                        type="button"
+                        className={`bookmarkBtn ${onList ? "bookmarkBtnOn" : ""}`}
+                        aria-pressed={onList}
+                        aria-label={
+                          listsState.lists.length === 1
+                            ? onList
+                              ? `${product.name} is saved to ${listsState.lists[0].name}`
+                              : `Save ${product.name} to ${listsState.lists[0].name}`
+                            : `Save ${product.name} to a list`
+                        }
+                        onClick={() => handleBookmark(product)}
+                      >
+                        <BookmarkIcon filled={onList} />
+                      </button>
+                      {menuOpen ? (
+                        <div className="bookmarkMenu" role="menu" aria-label={`Lists for ${product.name}`}>
+                          {listsState.lists.length === 0 ? (
+                            <form
+                              className="bookmarkCreate"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                const input = event.currentTarget.elements.namedItem("listName");
+                                createList(input && "value" in input ? input.value : "", product);
+                              }}
+                            >
+                              <p>Create a list to save this item.</p>
+                              <input name="listName" placeholder="Weekly staples" maxLength={LIST_NAME_LIMIT} autoFocus />
+                              <button type="submit">Create and save</button>
+                            </form>
+                          ) : (
+                            listsState.lists.map((list) => {
+                              const saved = savedListIds.includes(list.id);
+                              return (
+                                <button
+                                  key={list.id}
+                                  type="button"
+                                  role="menuitemcheckbox"
+                                  aria-checked={saved}
+                                  className={saved ? "bookmarkMenuOn" : ""}
+                                  onClick={() => toggleListItem(list.id, product)}
+                                >
+                                  {saved ? "✓ " : ""}
+                                  {list.name}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                     <img src={product.image_url} alt={product.name} />
                     <h3>{product.name}</h3>
                     <p>{product.description}</p>
@@ -1057,6 +1383,21 @@ export default function App() {
             Browse stores
           </button>
         </section>
+      ) : null}
+
+      {activePage === "lists" ? (
+        <ListsPage
+          lists={listsState.lists}
+          activeListId={listsState.activeListId}
+          activeStoreName={selectedStore?.name || ""}
+          notice={listsNotice}
+          onCreate={createList}
+          onRename={renameList}
+          onDelete={deleteList}
+          onSelect={selectList}
+          onRemoveItem={removeListItem}
+          onAddAll={addListToCart}
+        />
       ) : null}
 
       {activePage === "profile" ? (
