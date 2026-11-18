@@ -14,6 +14,11 @@ export default function CartDrawer({
   subtotal,
   otherCarts,
   checkoutLoading,
+  slots,
+  slotsLoading,
+  slotsError,
+  selectedSlotId,
+  onSelectSlot,
   onClose,
   onIncrease,
   onDecrease,
@@ -23,6 +28,14 @@ export default function CartDrawer({
   const fulfillment = supportsPickup
     ? `Delivery or pickup · ${etaLabel || "ASAP"}`
     : `Delivery · ${etaLabel || "ASAP"}`;
+  const slotReady = Boolean(selectedSlotId) && !slotsLoading;
+  const slotHint = slotsLoading
+    ? "Loading delivery windows…"
+    : slotsError
+      ? slotsError
+      : !selectedSlotId
+        ? "Choose a delivery window to check out."
+        : "";
 
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label={`${storeName} cart`}>
@@ -88,12 +101,40 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
+          {items.length > 0 ? (
+            <div className="deliverySlots">
+              <p className="deliverySlotsLabel" id="delivery-window-label">
+                Delivery window
+              </p>
+              {!slotsLoading && slots.length > 0 ? (
+                <div className="chips" role="group" aria-labelledby="delivery-window-label">
+                  {slots.map((slot) => (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      className={`chip ${slot.id === selectedSlotId ? "chipActive" : ""}`}
+                      aria-pressed={slot.id === selectedSlotId}
+                      onClick={() => onSelectSlot(slot)}
+                    >
+                      {slot.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {slotHint ? (
+                <p className="deliverySlotHint" id="delivery-window-hint">
+                  {slotHint}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutLoading || items.length === 0 || !slotReady}
+            aria-describedby={slotHint ? "delivery-window-hint" : undefined}
           >
             {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
           </button>

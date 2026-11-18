@@ -10,6 +10,7 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const DELIVERY_SLOTS_KEY = "freshcart-delivery-slots";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -161,6 +162,10 @@ export default function App() {
   );
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [deliverySlots, setDeliverySlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState("");
+  const [slotByStore, setSlotByStore] = useState(() => readJsonStorage(DELIVERY_SLOTS_KEY, {}));
   const [dealsLoading, setDealsLoading] = useState(false);
   const [dealsNotice, setDealsNotice] = useState("");
   const [checkoutState, setCheckoutState] = useState({
@@ -189,6 +194,25 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    setSlotByStore((prev) => {
+      let changed = false;
+      const next = {};
+      for (const [storeId, slot] of Object.entries(prev || {})) {
+        if (countItems(carts[storeId]) > 0 && slot && typeof slot === "object" && slot.id) {
+          next[storeId] = slot;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [carts]);
+
+  useEffect(() => {
+    window.localStorage.setItem(DELIVERY_SLOTS_KEY, JSON.stringify(slotByStore));
+  }, [slotByStore]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -245,6 +269,10 @@ export default function App() {
         // Merge so a slimmer remote catalog can't wipe line metadata before carts sync.
         const remote = parseStoredObject(event.newValue);
         setCartCatalog((prev) => ({ ...prev, ...remote }));
+        return;
+      }
+      if (event.key === DELIVERY_SLOTS_KEY) {
+        setSlotByStore(parseStoredObject(event.newValue));
       }
     }
     window.addEventListener("storage", onStorage);
@@ -474,6 +502,56 @@ export default function App() {
     return hubCarts.filter((cart) => cart.storeId !== activeStoreId);
   }, [hubCarts, activeStoreId]);
 
+  const savedSlot = slotByStore[activeStoreId];
+  const selectedSlot =
+    savedSlot && savedSlot.zip === selectedZip
+      ? deliverySlots.find((slot) => slot.id === savedSlot.id) || null
+      : null;
+
+  useEffect(() => {
+    if (!activeStoreId) {
+      setDeliverySlots([]);
+      setSlotsError("");
+      setSlotsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setSlotsLoading(true);
+    setSlotsError("");
+    setDeliverySlots([]);
+
+    async function loadDeliverySlots() {
+      try {
+        const params = new URLSearchParams({ zip: selectedZip });
+        const response = await fetch(
+          `${API_BASE}/api/stores/${encodeURIComponent(activeStoreId)}/slots?${params.toString()}`,
+          { signal: controller.signal }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.detail || "Delivery windows are unavailable right now.");
+        }
+        if (!controller.signal.aborted) {
+          setDeliverySlots(Array.isArray(data.items) ? data.items : []);
+        }
+      } catch (err) {
+        if (err.name === "AbortError" || controller.signal.aborted) {
+          return;
+        }
+        setDeliverySlots([]);
+        setSlotsError(err.message || "Delivery windows are unavailable right now.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setSlotsLoading(false);
+        }
+      }
+    }
+
+    loadDeliverySlots();
+    return () => controller.abort();
+  }, [activeStoreId, selectedZip]);
+
   function pruneCartsToStores(storeList) {
     const availableIds = new Set(storeList.map((store) => store.id));
     setCarts((prev) => {
@@ -485,6 +563,16 @@ export default function App() {
       }
       return next;
     });
+  }
+
+  function selectDeliverySlot(slot) {
+    if (!activeStoreId || !slot?.id) {
+      return;
+    }
+    setSlotByStore((prev) => ({
+      ...prev,
+      [activeStoreId]: { id: slot.id, label: slot.label, zip: selectedZip }
+    }));
   }
 
   function clearStoreCart(storeId) {
@@ -636,7 +724,7 @@ export default function App() {
   }
 
   async function startCheckout() {
-    if (cartItems.length === 0 || !activeStoreId) {
+    if (cartItems.length === 0 || !activeStoreId || !selectedSlot) {
       return;
     }
 
@@ -660,7 +748,9 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          delivery_slot: selectedSlot.label,
+          zip: selectedZip
         })
       });
       const data = await response.json();
@@ -709,9 +799,13 @@ export default function App() {
         try {
           const session = await verifyCheckout(sessionId);
           if (session.payment_status === "paid") {
+            const deliverySlot =
+              typeof session.delivery_slot === "string" ? session.delivery_slot.trim() : "";
             setCheckoutState({
               type: "success",
-              message: "Payment confirmed. Your grocery order is placed."
+              message: deliverySlot
+                ? `Payment confirmed. Your grocery order is placed for ${deliverySlot}.`
+                : "Payment confirmed. Your grocery order is placed."
             });
             const checkedOutStoreId =
               session.store_id || window.sessionStorage.getItem(CHECKOUT_STORE_KEY) || "";
@@ -1190,6 +1284,11 @@ export default function App() {
           subtotal={cartTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
+          slots={deliverySlots}
+          slotsLoading={slotsLoading}
+          slotsError={slotsError}
+          selectedSlotId={selectedSlot?.id || ""}
+          onSelectSlot={selectDeliverySlot}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
