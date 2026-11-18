@@ -618,6 +618,21 @@ body {
   background: #fff;
 }
 
+.deliverySlots h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.deliverySlots .chips {
+  margin-bottom: 12px;
+}
+
+.slotHint {
+  margin: 0 0 8px;
+  color: #5c6560;
+  font-size: 0.82rem;
+}
+
 .checkoutBtn {
   margin-top: 10px;
   width: 100%;
@@ -631,7 +646,9 @@ body {
 }
 
 .checkoutBtn:disabled {
-  opacity: 0.65;
+  background: #d5ddd4;
+  color: #5c6560;
+  opacity: 1;
   cursor: not-allowed;
 }
 

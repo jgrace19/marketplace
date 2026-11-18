@@ -14,6 +14,11 @@ export default function CartDrawer({
   subtotal,
   otherCarts,
   checkoutLoading,
+  slots = [],
+  slotsLoading = false,
+  slotsError = "",
+  selectedSlotId = "",
+  onSelectSlot,
   onClose,
   onIncrease,
   onDecrease,
@@ -23,6 +28,12 @@ export default function CartDrawer({
   const fulfillment = supportsPickup
     ? `Delivery or pickup · ${etaLabel || "ASAP"}`
     : `Delivery · ${etaLabel || "ASAP"}`;
+  const checkoutBlocked = checkoutLoading || items.length === 0 || !selectedSlotId || slotsLoading;
+  const slotHint = slotsError
+    ? slotsError
+    : items.length > 0 && !selectedSlotId
+      ? "Choose a delivery window to check out."
+      : "";
 
   return (
     <div className="cartOverlay" role="dialog" aria-modal="true" aria-label={`${storeName} cart`}>
@@ -88,12 +99,36 @@ export default function CartDrawer({
         )}
 
         <footer className="cartDrawerFooter">
+          {items.length > 0 ? (
+            <div className="deliverySlots">
+              <h3>Delivery window</h3>
+              {slotsLoading ? <p className="slotHint">Loading delivery windows...</p> : null}
+              <div className="chips" role="group" aria-label="Delivery window">
+                {slots.map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    className={slot.id === selectedSlotId ? "chip chipActive" : "chip"}
+                    aria-pressed={slot.id === selectedSlotId}
+                    onClick={() => onSelectSlot(slot.id)}
+                  >
+                    {slot.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="cartTotal">Subtotal: {currency(subtotal)}</div>
+          {slotHint ? (
+            <p className="slotHint" role="status">
+              {slotHint}
+            </p>
+          ) : null}
           <button
             type="button"
             className="checkoutBtn"
             onClick={onCheckout}
-            disabled={checkoutLoading || items.length === 0}
+            disabled={checkoutBlocked}
           >
             {checkoutLoading ? "Starting checkout..." : `Go to checkout ${currency(subtotal)}`}
           </button>

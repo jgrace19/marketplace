@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional
@@ -458,6 +459,101 @@ def get_stores_for_zip(zip_code: Optional[str] = None) -> tuple[str, List[dict]]
 
 def get_store(store_id: str) -> Optional[Store]:
     return STORES.get(store_id)
+
+
+_EN_DASH = "\u2013"
+_ETA_RE = re.compile(r"by\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.IGNORECASE)
+TOMORROW_MORNING_LABEL = f"Tomorrow 9{_EN_DASH}11am"
+TOMORROW_MORNING_ID = "tomorrow-9-11am"
+
+
+def _clock_parts(hour24: int) -> tuple[int, str]:
+    suffix = "am" if hour24 < 12 else "pm"
+    hour12 = hour24 % 12 or 12
+    return hour12, suffix
+
+
+def _window(day: str, start_hour: int, end_hour: int) -> dict:
+    start_num, start_suffix = _clock_parts(start_hour)
+    end_num, end_suffix = _clock_parts(end_hour)
+    if start_suffix == end_suffix:
+        label = f"{day} {start_num}{_EN_DASH}{end_num}{end_suffix}"
+        slot_id = f"{day.lower()}-{start_num}-{end_num}{end_suffix}"
+    else:
+        label = f"{day} {start_num}{start_suffix}{_EN_DASH}{end_num}{end_suffix}"
+        slot_id = f"{day.lower()}-{start_num}{start_suffix}-{end_num}{end_suffix}"
+    return {"id": slot_id, "label": label}
+
+
+def _eta_end_hour(eta_label: str) -> int:
+    """Two-hour window end, snapped up from a 'By 7:00pm' style deadline."""
+    match = _ETA_RE.search(eta_label or "")
+    if not match:
+        return 19
+    hour = int(match.group(1))
+    minute = int(match.group(2) or "0")
+    ampm = match.group(3).lower()
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+    if minute >= 30:
+        hour += 1
+    return max(14, min(hour, 22))
+
+
+def _later_tomorrow_hours(distance_mi: float) -> tuple[int, int]:
+    if distance_mi < 1:
+        return 11, 13
+    if distance_mi < 2:
+        return 12, 14
+    if distance_mi < 3.5:
+        return 14, 16
+    return 17, 19
+
+
+def delivery_slots_for_store(store_id: str, zip_code: Optional[str] = None) -> tuple[str, List[dict]]:
+    """Build per-store windows from the zip-adjusted ETA and distance.
+
+    Every store includes the demo label ``Tomorrow 9–11am``. The same-day
+    window follows ``eta_label`` and the later next-day window follows
+    ``distance_mi``, so two stores (or the same store in two zips) can differ.
+    """
+    resolved, items = get_stores_for_zip(zip_code)
+    store = next((item for item in items if item["id"] == store_id), None)
+    if store is None:
+        base = get_store(store_id)
+        if base is None:
+            return resolved, []
+        store = asdict(base)
+
+    end_hour = _eta_end_hour(str(store.get("eta_label") or ""))
+    distance = float(store.get("distance_mi") or 0)
+    later_start, later_end = _later_tomorrow_hours(distance)
+    slots = [
+        _window("Today", end_hour - 2, end_hour),
+        {"id": TOMORROW_MORNING_ID, "label": TOMORROW_MORNING_LABEL},
+        _window("Tomorrow", later_start, later_end),
+    ]
+    unique: List[dict] = []
+    seen = set()
+    for slot in slots:
+        if slot["id"] in seen:
+            continue
+        seen.add(slot["id"])
+        unique.append(dict(slot))
+    return resolved, unique
+
+
+def find_delivery_slot(store_id: str, slot_value: str, zip_code: Optional[str] = None) -> Optional[dict]:
+    needle = (slot_value or "").strip()
+    if not needle:
+        return None
+    _, slots = delivery_slots_for_store(store_id, zip_code)
+    for slot in slots:
+        if needle == slot["id"] or needle == slot["label"]:
+            return slot
+    return None
 
 
 def get_products_for_store(store_id: str, limit: int = 60) -> List[dict]:
