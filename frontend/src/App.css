@@ -162,6 +162,14 @@ body {
   flex-wrap: wrap;
 }
 
+.storesHeader,
+.storesHeader h2,
+.storesHeader .storesSubhead,
+.storesHeader .zipPicker,
+.storesHeader .zipPicker select {
+  color: #ff69b4;
+}
+
 .storesHeader h2 {
   margin: 0;
   font-size: 1.2rem;
@@ -390,11 +398,89 @@ body {
   color: #108910;
 }
 
+.cartPromoForm {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeeea;
+}
+
+.cartPromoLabel {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2b2b2b;
+  margin-bottom: 6px;
+}
+
+.cartPromoRow {
+  display: flex;
+  gap: 8px;
+}
+
+.cartPromoInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #d2d6d0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+}
+
+.cartPromoApplyBtn {
+  border: 1px solid #108910;
+  background: #fff;
+  color: #108910;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cartPromoApplyBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cartPromoError {
+  margin: 8px 0 0;
+  color: #b42318;
+  font-size: 0.85rem;
+}
+
+.cartPromoApplied {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #108910;
+  font-weight: 600;
+}
+
+.cartPromoRemoveBtn {
+  border: none;
+  background: transparent;
+  color: #4f4f4f;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0;
+}
+
 .cartTotal {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid #ebeeea;
   font-weight: 600;
+}
+
+.cartGrandTotal {
+  margin-top: 6px;
+  font-weight: 700;
+  font-size: 1.05rem;
 }
 
 .cartOverlay {

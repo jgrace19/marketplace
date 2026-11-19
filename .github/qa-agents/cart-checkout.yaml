@@ -36,4 +36,11 @@ focus_prompt: |
     the cart cleanly), reloading mid-checkout (carts persist via localStorage),
     returning with `?checkout=cancel`, and clicking Checkout while the cart is
     empty (button must be disabled).
+  - Promo codes in the cart drawer: apply `FRESH10` with two items in the cart;
+    a discount line appears and the drawer total drops by exactly 10%. `SAVE5`
+    shows an inline error when the subtotal is under $25 and applies a $5
+    discount once the subtotal is $25+. `SPRING24` and an unknown code show an
+    inline error without changing the total. After reload, the applied promo
+    persists per store cart and clears after a paid checkout for that store.
+    The Stripe checkout total must match the discounted drawer total.
 max_turns: 60

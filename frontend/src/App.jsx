@@ -10,6 +10,7 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const PROMOS_STORAGE_KEY = "freshcart-promos";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -76,6 +77,17 @@ function storeMatchesFilter(store, filterId) {
     return Boolean(store.supports_ebt) || (store.tags || []).includes("ebt");
   }
   return (store.tags || []).includes(filterId);
+}
+
+function apiErrorMessage(data, fallback = "Request failed.") {
+  const detail = data?.detail;
+  if (detail && typeof detail === "object" && detail.message) {
+    return detail.message;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  return fallback;
 }
 
 function readJsonStorage(key, fallback) {
@@ -159,6 +171,7 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [promos, setPromos] = useState(() => readJsonStorage(PROMOS_STORAGE_KEY, {}));
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +202,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROMOS_STORAGE_KEY, JSON.stringify(promos));
+  }, [promos]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -444,6 +461,15 @@ export default function App() {
     [cartItems]
   );
 
+  const activePromo = activeStoreId ? promos[activeStoreId] : null;
+  const promoSubtotalMatches =
+    activePromo &&
+    typeof activePromo.subtotal === "number" &&
+    Math.abs(activePromo.subtotal - cartTotal) < 0.005;
+  const displayPromo = promoSubtotalMatches ? activePromo : null;
+  const checkoutTotal = displayPromo ? displayPromo.total : cartTotal;
+  const activePromoCode = activePromo?.code || "";
+
   const cartCount = useMemo(
     () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
     [carts]
@@ -477,13 +503,30 @@ export default function App() {
   function pruneCartsToStores(storeList) {
     const availableIds = new Set(storeList.map((store) => store.id));
     setCarts((prev) => {
-      const next = {};
+      const nextCarts = {};
       for (const [storeId, cart] of Object.entries(prev)) {
         if (availableIds.has(storeId) && countItems(cart) > 0) {
-          next[storeId] = cart;
+          nextCarts[storeId] = cart;
         }
       }
-      return next;
+      setPromos((promoPrev) => {
+        const promoNext = {};
+        for (const [storeId, promo] of Object.entries(promoPrev)) {
+          if (nextCarts[storeId]) {
+            promoNext[storeId] = promo;
+          }
+        }
+        const prevKeys = Object.keys(promoPrev);
+        const nextKeys = Object.keys(promoNext);
+        if (
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every((key) => promoPrev[key] === promoNext[key])
+        ) {
+          return promoPrev;
+        }
+        return promoNext;
+      });
+      return nextCarts;
     });
   }
 
@@ -496,7 +539,110 @@ export default function App() {
       delete next[storeId];
       return next;
     });
+    setPromos((prev) => {
+      if (!prev[storeId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[storeId];
+      return next;
+    });
   }
+
+  async function applyPromo(code) {
+    const trimmed = (code || "").trim();
+    if (!trimmed) {
+      return { ok: false, message: "Enter a promo code." };
+    }
+    if (!activeStoreId || cartItems.length === 0) {
+      return { ok: false, message: "Add items before applying a promo code." };
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/promo/validate?code=${encodeURIComponent(trimmed)}&subtotal=${encodeURIComponent(cartTotal)}`
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        return { ok: false, message: apiErrorMessage(data, "Unable to apply promo code.") };
+      }
+      setPromos((prev) => ({
+        ...prev,
+        [activeStoreId]: {
+          code: data.code,
+          discount: data.discount,
+          subtotal: data.subtotal,
+          total: data.total
+        }
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: "Unable to apply promo code." };
+    }
+  }
+
+  function removePromo() {
+    if (!activeStoreId) {
+      return;
+    }
+    setPromos((prev) => {
+      if (!prev[activeStoreId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[activeStoreId];
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!activeStoreId || !activePromoCode || cartItems.length === 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function refreshPromo() {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/promo/validate?code=${encodeURIComponent(activePromoCode)}&subtotal=${encodeURIComponent(cartTotal)}`
+        );
+        const data = await response.json();
+        if (cancelled) {
+          return;
+        }
+        if (!response.ok) {
+          setPromos((prev) => {
+            if (!prev[activeStoreId]) {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[activeStoreId];
+            return next;
+          });
+          return;
+        }
+        setPromos((prev) => ({
+          ...prev,
+          [activeStoreId]: {
+            code: data.code,
+            discount: data.discount,
+            subtotal: data.subtotal,
+            total: data.total
+          }
+        }));
+      } catch {
+        if (!cancelled) {
+          removePromo();
+        }
+      }
+    }
+
+    refreshPromo();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId, cartTotal, activePromoCode, cartItems.length]);
 
   function addToCart(product) {
     const productId = typeof product === "string" ? product : product.id;
@@ -630,7 +776,7 @@ export default function App() {
     );
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.detail || "Unable to verify checkout status.");
+      throw new Error(apiErrorMessage(data, "Unable to verify checkout status."));
     }
     return data;
   }
@@ -660,12 +806,13 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          ...(displayPromo?.code ? { promo_code: displayPromo.code } : {})
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || "Checkout failed.");
+        throw new Error(apiErrorMessage(data, "Checkout failed."));
       }
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
@@ -1188,11 +1335,15 @@ export default function App() {
           supportsPickup={Boolean(selectedStore.supports_pickup)}
           items={cartItems}
           subtotal={cartTotal}
+          promo={displayPromo}
+          checkoutTotal={checkoutTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onApplyPromo={applyPromo}
+          onRemovePromo={removePromo}
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />

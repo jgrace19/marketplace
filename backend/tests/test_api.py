@@ -312,6 +312,7 @@ def test_session_status_returns_payment_fields(client, monkeypatch):
         "currency": "usd",
         "store_id": store_id,
         "store_name": store_name,
+        "promo_code": "",
     }
     retrieve.assert_called_once_with("cs_test_123456")
 
@@ -340,6 +341,7 @@ def test_session_status_handles_missing_customer_and_metadata(client, monkeypatc
     assert body["amount_total"] is None
     assert body["store_id"] == ""
     assert body["store_name"] == ""
+    assert body["promo_code"] == ""
 
 
 def test_session_status_stripe_error_is_not_found(client, monkeypatch):

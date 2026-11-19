@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import re
 
 import stripe
@@ -97,6 +97,108 @@ class CheckoutRequest(BaseModel):
     items: List[CheckoutItem] = Field(min_length=1)
     store_id: Optional[str] = None
     store_name: Optional[str] = None
+    promo_code: Optional[str] = None
+
+
+PROMO_CODES: Dict[str, Dict[str, Any]] = {
+    "FRESH10": {
+        "type": "percent",
+        "value": 10,
+        "min_subtotal_cents": 0,
+        "expired": False,
+        "description": "10% off your order",
+    },
+    "SAVE5": {
+        "type": "fixed",
+        "value": 500,
+        "min_subtotal_cents": 2500,
+        "expired": False,
+        "description": "$5 off orders of $25 or more",
+    },
+    "SPRING24": {
+        "type": "percent",
+        "value": 15,
+        "min_subtotal_cents": 0,
+        "expired": True,
+        "description": "Spring sale (expired)",
+    },
+}
+
+
+def _normalize_promo_code(code: str) -> str:
+    return (code or "").strip().upper()
+
+
+def _round_half_up(value: float) -> int:
+    return int(value + 0.5)
+
+
+def compute_promo(code: str, subtotal_cents: int) -> dict:
+    normalized = _normalize_promo_code(code)
+    if not normalized:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "unknown", "message": "Enter a promo code."},
+        )
+
+    definition = PROMO_CODES.get(normalized)
+    if definition is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "unknown", "message": f"Promo code '{normalized}' is not valid."},
+        )
+    if definition.get("expired"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "expired", "message": f"Promo code '{normalized}' has expired."},
+        )
+
+    min_subtotal = int(definition.get("min_subtotal_cents") or 0)
+    if subtotal_cents < min_subtotal:
+        min_dollars = min_subtotal / 100
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "min_subtotal",
+                "message": f"This code requires a ${min_dollars:.2f} subtotal.",
+            },
+        )
+
+    promo_type = definition["type"]
+    if promo_type == "percent":
+        discount_cents = _round_half_up(subtotal_cents * float(definition["value"]) / 100)
+    elif promo_type == "fixed":
+        discount_cents = int(definition["value"])
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "unknown", "message": f"Promo code '{normalized}' is not valid."},
+        )
+
+    discount_cents = min(discount_cents, subtotal_cents)
+    total_cents = subtotal_cents - discount_cents
+
+    return {
+        "code": normalized,
+        "description": definition.get("description") or "",
+        "discount_cents": discount_cents,
+        "subtotal_cents": subtotal_cents,
+        "total_cents": total_cents,
+    }
+
+
+def _promo_payload_from_cents(result: dict) -> dict:
+    return {
+        "code": result["code"],
+        "description": result["description"],
+        "discount": round(result["discount_cents"] / 100, 2),
+        "subtotal": round(result["subtotal_cents"] / 100, 2),
+        "total": round(result["total_cents"] / 100, 2),
+    }
+
+
+def _cart_subtotal_cents(items: List[CheckoutItem]) -> int:
+    return sum(int(round(item.price * 100)) * item.quantity for item in items)
 
 
 def configure_stripe() -> None:
@@ -142,6 +244,16 @@ def list_products(
     if query.strip():
         products = [p for p in products if _matches_partial_terms(p, query)]
     return {"items": [asdict(p) for p in products], "count": len(products), "store_id": resolved_store}
+
+
+@app.get("/api/promo/validate")
+def validate_promo(
+    code: str = Query(default=""),
+    subtotal: float = Query(ge=0),
+) -> dict:
+    subtotal_cents = int(round(subtotal * 100))
+    result = compute_promo(code, subtotal_cents)
+    return _promo_payload_from_cents(result)
 
 
 @app.get("/api/recommendations")
@@ -201,6 +313,27 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         metadata["store_id"] = payload.store_id
     if payload.store_name:
         metadata["store_name"] = payload.store_name
+
+    promo_result: Optional[dict] = None
+    if payload.promo_code and payload.promo_code.strip():
+        subtotal_cents = _cart_subtotal_cents(payload.items)
+        promo_result = compute_promo(payload.promo_code, subtotal_cents)
+        metadata["promo_code"] = promo_result["code"]
+        if promo_result["discount_cents"] > 0:
+            try:
+                coupon = stripe.Coupon.create(
+                    amount_off=promo_result["discount_cents"],
+                    currency="usd",
+                    duration="once",
+                    name=promo_result["code"],
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Unable to create Stripe coupon: {exc}",
+                ) from exc
+            session_kwargs["discounts"] = [{"coupon": coupon.id}]
+
     if metadata:
         session_kwargs["metadata"] = metadata
 
@@ -236,4 +369,5 @@ def get_checkout_session_status(session_id: str = Query(min_length=10)) -> dict:
         "currency": session.currency,
         "store_id": metadata.get("store_id") or "",
         "store_name": metadata.get("store_name") or "",
+        "promo_code": metadata.get("promo_code") or "",
     }
