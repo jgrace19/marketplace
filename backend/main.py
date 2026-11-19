@@ -319,19 +319,20 @@ def create_checkout_session(payload: CheckoutRequest) -> dict:
         subtotal_cents = _cart_subtotal_cents(payload.items)
         promo_result = compute_promo(payload.promo_code, subtotal_cents)
         metadata["promo_code"] = promo_result["code"]
-        try:
-            coupon = stripe.Coupon.create(
-                amount_off=promo_result["discount_cents"],
-                currency="usd",
-                duration="once",
-                name=promo_result["code"],
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Unable to create Stripe coupon: {exc}",
-            ) from exc
-        session_kwargs["discounts"] = [{"coupon": coupon.id}]
+        if promo_result["discount_cents"] > 0:
+            try:
+                coupon = stripe.Coupon.create(
+                    amount_off=promo_result["discount_cents"],
+                    currency="usd",
+                    duration="once",
+                    name=promo_result["code"],
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Unable to create Stripe coupon: {exc}",
+                ) from exc
+            session_kwargs["discounts"] = [{"coupon": coupon.id}]
 
     if metadata:
         session_kwargs["metadata"] = metadata

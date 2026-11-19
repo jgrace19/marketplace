@@ -79,7 +79,7 @@ function storeMatchesFilter(store, filterId) {
   return (store.tags || []).includes(filterId);
 }
 
-function promoErrorMessage(data) {
+function apiErrorMessage(data, fallback = "Request failed.") {
   const detail = data?.detail;
   if (detail && typeof detail === "object" && detail.message) {
     return detail.message;
@@ -87,7 +87,7 @@ function promoErrorMessage(data) {
   if (typeof detail === "string") {
     return detail;
   }
-  return "Unable to apply promo code.";
+  return fallback;
 }
 
 function readJsonStorage(key, fallback) {
@@ -462,7 +462,12 @@ export default function App() {
   );
 
   const activePromo = activeStoreId ? promos[activeStoreId] : null;
-  const checkoutTotal = activePromo?.total ?? cartTotal;
+  const promoSubtotalMatches =
+    activePromo &&
+    typeof activePromo.subtotal === "number" &&
+    Math.abs(activePromo.subtotal - cartTotal) < 0.005;
+  const displayPromo = promoSubtotalMatches ? activePromo : null;
+  const checkoutTotal = displayPromo ? displayPromo.total : cartTotal;
   const activePromoCode = activePromo?.code || "";
 
   const cartCount = useMemo(
@@ -498,13 +503,30 @@ export default function App() {
   function pruneCartsToStores(storeList) {
     const availableIds = new Set(storeList.map((store) => store.id));
     setCarts((prev) => {
-      const next = {};
+      const nextCarts = {};
       for (const [storeId, cart] of Object.entries(prev)) {
         if (availableIds.has(storeId) && countItems(cart) > 0) {
-          next[storeId] = cart;
+          nextCarts[storeId] = cart;
         }
       }
-      return next;
+      setPromos((promoPrev) => {
+        const promoNext = {};
+        for (const [storeId, promo] of Object.entries(promoPrev)) {
+          if (nextCarts[storeId]) {
+            promoNext[storeId] = promo;
+          }
+        }
+        const prevKeys = Object.keys(promoPrev);
+        const nextKeys = Object.keys(promoNext);
+        if (
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every((key) => promoPrev[key] === promoNext[key])
+        ) {
+          return promoPrev;
+        }
+        return promoNext;
+      });
+      return nextCarts;
     });
   }
 
@@ -541,13 +563,14 @@ export default function App() {
       );
       const data = await response.json();
       if (!response.ok) {
-        return { ok: false, message: promoErrorMessage(data) };
+        return { ok: false, message: apiErrorMessage(data, "Unable to apply promo code.") };
       }
       setPromos((prev) => ({
         ...prev,
         [activeStoreId]: {
           code: data.code,
           discount: data.discount,
+          subtotal: data.subtotal,
           total: data.total
         }
       }));
@@ -603,6 +626,7 @@ export default function App() {
           [activeStoreId]: {
             code: data.code,
             discount: data.discount,
+            subtotal: data.subtotal,
             total: data.total
           }
         }));
@@ -752,7 +776,7 @@ export default function App() {
     );
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.detail || "Unable to verify checkout status.");
+      throw new Error(apiErrorMessage(data, "Unable to verify checkout status."));
     }
     return data;
   }
@@ -783,12 +807,12 @@ export default function App() {
           })),
           store_id: activeStoreId,
           store_name: selectedStore?.name || activeStoreId,
-          ...(activePromo?.code ? { promo_code: activePromo.code } : {})
+          ...(displayPromo?.code ? { promo_code: displayPromo.code } : {})
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || "Checkout failed.");
+        throw new Error(apiErrorMessage(data, "Checkout failed."));
       }
       if (!data.checkout_url) {
         throw new Error("Missing Stripe checkout URL.");
@@ -1311,7 +1335,7 @@ export default function App() {
           supportsPickup={Boolean(selectedStore.supports_pickup)}
           items={cartItems}
           subtotal={cartTotal}
-          promo={activePromo}
+          promo={displayPromo}
           checkoutTotal={checkoutTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}

@@ -99,6 +99,25 @@ def test_validate_promo_negative_subtotal(client):
     assert response.status_code == 422
 
 
+def test_checkout_skips_coupon_when_discount_is_zero(client, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
+    payload = {
+        "items": [_sample_item(price=0.01, quantity=1)],
+        "promo_code": "FRESH10",
+    }
+    fake_session = SimpleNamespace(url="https://checkout.example.test/s", id="cs_test_zero")
+
+    with patch.object(main.stripe.Coupon, "create") as create_coupon:
+        with patch.object(main.stripe.checkout.Session, "create", return_value=fake_session) as create_session:
+            response = client.post("/api/checkout/session", json=payload)
+
+    assert response.status_code == 200
+    create_coupon.assert_not_called()
+    session_kwargs = create_session.call_args.kwargs
+    assert "discounts" not in session_kwargs
+    assert session_kwargs["metadata"]["promo_code"] == "FRESH10"
+
+
 def test_checkout_applies_stripe_coupon(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_example")
     store_id = next(iter(STORES))
