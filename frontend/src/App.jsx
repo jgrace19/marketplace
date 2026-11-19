@@ -10,6 +10,7 @@ const STORE_STORAGE_KEY = "freshcart-store-id";
 const CARTS_STORAGE_KEY = "freshcart-carts";
 const CART_CATALOG_STORAGE_KEY = "freshcart-cart-catalog";
 const CHECKOUT_STORE_KEY = "freshcart-checkout-store";
+const PROMOS_STORAGE_KEY = "freshcart-promos";
 const DEFAULT_ZIP = "10002";
 const ZIP_OPTIONS = [
   { value: "10002", label: "10002 — FreshCart City" },
@@ -76,6 +77,17 @@ function storeMatchesFilter(store, filterId) {
     return Boolean(store.supports_ebt) || (store.tags || []).includes("ebt");
   }
   return (store.tags || []).includes(filterId);
+}
+
+function promoErrorMessage(data) {
+  const detail = data?.detail;
+  if (detail && typeof detail === "object" && detail.message) {
+    return detail.message;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  return "Unable to apply promo code.";
 }
 
 function readJsonStorage(key, fallback) {
@@ -159,6 +171,7 @@ export default function App() {
   const [cartCatalog, setCartCatalog] = useState(() =>
     readJsonStorage(CART_CATALOG_STORAGE_KEY, {})
   );
+  const [promos, setPromos] = useState(() => readJsonStorage(PROMOS_STORAGE_KEY, {}));
   const [cartPanel, setCartPanel] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [dealsLoading, setDealsLoading] = useState(false);
@@ -189,6 +202,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(CART_CATALOG_STORAGE_KEY, JSON.stringify(cartCatalog));
   }, [cartCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROMOS_STORAGE_KEY, JSON.stringify(promos));
+  }, [promos]);
 
   useEffect(() => {
     function parseStoredObject(raw) {
@@ -444,6 +461,10 @@ export default function App() {
     [cartItems]
   );
 
+  const activePromo = activeStoreId ? promos[activeStoreId] : null;
+  const checkoutTotal = activePromo?.total ?? cartTotal;
+  const activePromoCode = activePromo?.code || "";
+
   const cartCount = useMemo(
     () => Object.values(carts).reduce((sum, cart) => sum + countItems(cart), 0),
     [carts]
@@ -496,7 +517,108 @@ export default function App() {
       delete next[storeId];
       return next;
     });
+    setPromos((prev) => {
+      if (!prev[storeId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[storeId];
+      return next;
+    });
   }
+
+  async function applyPromo(code) {
+    const trimmed = (code || "").trim();
+    if (!trimmed) {
+      return { ok: false, message: "Enter a promo code." };
+    }
+    if (!activeStoreId || cartItems.length === 0) {
+      return { ok: false, message: "Add items before applying a promo code." };
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/promo/validate?code=${encodeURIComponent(trimmed)}&subtotal=${encodeURIComponent(cartTotal)}`
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        return { ok: false, message: promoErrorMessage(data) };
+      }
+      setPromos((prev) => ({
+        ...prev,
+        [activeStoreId]: {
+          code: data.code,
+          discount: data.discount,
+          total: data.total
+        }
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: "Unable to apply promo code." };
+    }
+  }
+
+  function removePromo() {
+    if (!activeStoreId) {
+      return;
+    }
+    setPromos((prev) => {
+      if (!prev[activeStoreId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[activeStoreId];
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!activeStoreId || !activePromoCode || cartItems.length === 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function refreshPromo() {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/promo/validate?code=${encodeURIComponent(activePromoCode)}&subtotal=${encodeURIComponent(cartTotal)}`
+        );
+        const data = await response.json();
+        if (cancelled) {
+          return;
+        }
+        if (!response.ok) {
+          setPromos((prev) => {
+            if (!prev[activeStoreId]) {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[activeStoreId];
+            return next;
+          });
+          return;
+        }
+        setPromos((prev) => ({
+          ...prev,
+          [activeStoreId]: {
+            code: data.code,
+            discount: data.discount,
+            total: data.total
+          }
+        }));
+      } catch {
+        if (!cancelled) {
+          removePromo();
+        }
+      }
+    }
+
+    refreshPromo();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId, cartTotal, activePromoCode, cartItems.length]);
 
   function addToCart(product) {
     const productId = typeof product === "string" ? product : product.id;
@@ -660,7 +782,8 @@ export default function App() {
             image_url: item.image_url
           })),
           store_id: activeStoreId,
-          store_name: selectedStore?.name || activeStoreId
+          store_name: selectedStore?.name || activeStoreId,
+          ...(activePromo?.code ? { promo_code: activePromo.code } : {})
         })
       });
       const data = await response.json();
@@ -1188,11 +1311,15 @@ export default function App() {
           supportsPickup={Boolean(selectedStore.supports_pickup)}
           items={cartItems}
           subtotal={cartTotal}
+          promo={activePromo}
+          checkoutTotal={checkoutTotal}
           otherCarts={otherOpenCarts}
           checkoutLoading={checkoutLoading}
           onClose={closeCartPanel}
           onIncrease={addToCart}
           onDecrease={(productId) => decreaseItem(productId, selectedStore.id)}
+          onApplyPromo={applyPromo}
+          onRemovePromo={removePromo}
           onCheckout={startCheckout}
           onSwitchCart={switchDrawerCart}
         />
